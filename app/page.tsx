@@ -117,12 +117,7 @@ export default function Home() {
         </p>
       </section>
 
-      <section className="collection" ref={collection} aria-labelledby="models-title">
-        <div className="section-heading">
-          <p className="eyebrow">01 — Il modello</p>
-          <h2 id="models-title">Scegli il tuo<br />punto di partenza</h2>
-          <p>Due collezioni, un unico dialogo tra struttura, proporzione e materia naturale.</p>
-        </div>
+      <section 
 
         <div className="collection-selector" role="radiogroup" aria-labelledby="models-title">
           <div className="collection-family">
