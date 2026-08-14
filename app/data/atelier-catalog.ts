@@ -1,14 +1,35 @@
 export type PartRole = "plane" | "leg";
 
+export type AlettePartId = "top" | "leg-a" | "leg-b";
+
 export type ProductPart = {
-  id: "top" | "leg-a" | "leg-b";
-  meshName: "Piana" | "Gamba_A" | "Gamba_B";
+  id: AlettePartId;
+  meshName: string;
   label: string;
   shortLabel: string;
   role: PartRole;
   specification: string;
   explodeOffset: readonly [number, number, number];
 };
+
+export type AtelierProduct = {
+  id: string;
+  collection: string;
+  name: string;
+  shortName: string;
+  code: string;
+  revision: string;
+  model: string;
+  dimensions: string;
+  nominalMass: string;
+  parts: readonly ProductPart[];
+};
+
+export type AtelierProductId =
+  | "alette-coffee"
+  | "riviera-coffee"
+  | "riviera-side"
+  | "riviera-dining";
 
 export type StoneMaterial = {
   id: string;
@@ -40,44 +61,90 @@ export const stoneMaterials: readonly StoneMaterial[] = [
   { id: "grigio-perla", name: "Grigio Perla", texture: "/atelier/materials/grigio-perla.jpg", roughness: 0.46, allowedOn: everyPart },
 ] as const;
 
-export const aletteCoffee = {
-  id: "alette-coffee",
-  collection: "Alette Collection",
-  name: "Alette Coffee Table",
-  code: "RD-ALT-CT-1000",
-  revision: "B",
-  model: "/atelier/models/alette-coffee-rev-b.glb",
-  dimensions: "Ø 1000 × H 350 mm",
-  nominalMass: "77,8 kg",
-  parts: [
-    {
-      id: "top",
-      meshName: "Piana",
-      label: "Piana superiore",
-      shortLabel: "Piana",
-      role: "plane",
-      specification: "Ø 1000 × 20 mm · quattro sedi radiali · bordo inclinato",
-      explodeOffset: [0, 0.42, 0],
-    },
-    {
-      id: "leg-a",
-      meshName: "Gamba_A",
-      label: "Gamba uno",
-      shortLabel: "Gamba 1",
-      role: "leg",
-      specification: "1000 × 350 × 30 mm · cava centrale dall’alto · due tenoni",
-      explodeOffset: [0, 0, 0],
-    },
-    {
-      id: "leg-b",
-      meshName: "Gamba_B",
-      label: "Gamba due",
-      shortLabel: "Gamba 2",
-      role: "leg",
-      specification: "1000 × 350 × 30 mm · cava centrale dal basso · due tenoni",
-      explodeOffset: [0, 0.22, 0],
-    },
-  ] satisfies readonly ProductPart[],
-} as const;
+export const aletteParts = [
+  {
+    id: "top",
+    meshName: "Piana",
+    label: "Piana superiore",
+    shortLabel: "Piana",
+    role: "plane",
+    specification: "Piano superiore in pietra naturale",
+    explodeOffset: [0, 0.42, 0],
+  },
+  {
+    id: "leg-a",
+    meshName: "Gamba_A",
+    label: "Gamba uno",
+    shortLabel: "Gamba 1",
+    role: "leg",
+    specification: "Prima gamba strutturale in pietra naturale",
+    explodeOffset: [0, 0, 0],
+  },
+  {
+    id: "leg-b",
+    meshName: "Gamba_B",
+    label: "Gamba due",
+    shortLabel: "Gamba 2",
+    role: "leg",
+    specification: "Seconda gamba strutturale in pietra naturale",
+    explodeOffset: [0, 0.22, 0],
+  },
+] satisfies readonly ProductPart[];
+
+export const atelierProducts: Record<AtelierProductId, AtelierProduct> = {
+  "alette-coffee": {
+    id: "alette-coffee",
+    collection: "Alette Collection",
+    name: "Alette Coffee Table",
+    shortName: "Alette",
+    code: "RD-ALT-CT-1000",
+    revision: "B",
+    model: "/atelier/models/alette-coffee-rev-b.glb",
+    dimensions: "Ø 1000 × H 350 mm",
+    nominalMass: "77,8 kg",
+    parts: aletteParts,
+  },
+
+  "riviera-coffee": {
+    id: "riviera-coffee",
+    collection: "GF Collection",
+    name: "GF Coffee Table",
+    shortName: "Coffee",
+    code: "RD-GF-COFFEE",
+    revision: "01",
+    model: "/atelier/models/coffee_table_riviera.glb",
+    dimensions: "Ø 80,5 × H 35 cm",
+    nominalMass: "Su richiesta",
+    parts: aletteParts,
+  },
+
+  "riviera-side": {
+    id: "riviera-side",
+    collection: "GF Collection",
+    name: "GF Side Table",
+    shortName: "Side",
+    code: "RD-GF-SIDE",
+    revision: "01",
+    model: "/atelier/models/side_table_riviera.glb",
+    dimensions: "Ø 55 × H 52 cm",
+    nominalMass: "Su richiesta",
+    parts: aletteParts,
+  },
+
+  "riviera-dining": {
+    id: "riviera-dining",
+    collection: "GF Collection",
+    name: "GF Dining Table",
+    shortName: "Dining",
+    code: "RD-GF-DINING",
+    revision: "01",
+    model: "/atelier/models/dining_table_riviera.glb",
+    dimensions: "Ø 122,5 × H 79 cm",
+    nominalMass: "Su richiesta",
+    parts: aletteParts,
+  },
+};
+
+export const aletteCoffee = atelierProducts["alette-coffee"];
 
 export type AlettePartId = (typeof aletteCoffee.parts)[number]["id"];
