@@ -16,6 +16,8 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   atelierProducts,
+  getAtelierProduct,
+  isAtelierProductId,
   stoneMaterials,
   type AtelierPartId,
   type AtelierProduct,
@@ -24,10 +26,26 @@ import {
   type StoneMaterial,
 } from "../../data/atelier-catalog";
 
-type ViewName = "perspective" | "front" | "side" | "top";
-type LoadStatus = "loading" | "ready" | "error";
-type EnvironmentStatus = "idle" | "loading" | "ready" | "error";
-type PartMaterials = Partial<Record<AtelierPartId, string>>;
+type ViewName =
+  | "perspective"
+  | "front"
+  | "side"
+  | "top";
+
+type LoadStatus =
+  | "loading"
+  | "ready"
+  | "error";
+
+type EnvironmentStatus =
+  | "idle"
+  | "loading"
+  | "ready"
+  | "error";
+
+type PartMaterials = Partial<
+  Record<AtelierPartId, string>
+>;
 
 type EnvironmentPlacement = {
   x: number;
@@ -59,18 +77,26 @@ type ViewerActions = {
   setAutoRotate: (value: boolean) => void;
   setView: (view: ViewName) => void;
   setEnvironmentEnabled: (value: boolean) => void;
-  updateEnvironmentPlacement: (placement: EnvironmentPlacement) => void;
+  updateEnvironmentPlacement: (
+    placement: EnvironmentPlacement,
+  ) => void;
   saveImage: () => void;
 };
 
+const DEFAULT_PRODUCT_ID: AtelierProductId =
+  "alette-coffee";
+
 const DEFAULT_MATERIAL_ID = "bianco-carrara";
 
-const initialEnvironmentPlacement: EnvironmentPlacement = {
-  x: 0,
-  y: 0,
-  scale: 1,
-  shadow: 0.22,
-};
+const TARGET_MODEL_WIDTH = 1.25;
+
+const initialEnvironmentPlacement: EnvironmentPlacement =
+  {
+    x: 0,
+    y: 0,
+    scale: 1,
+    shadow: 0.22,
+  };
 
 const environmentFileTypes = [
   "image/jpeg",
@@ -78,7 +104,9 @@ const environmentFileTypes = [
   "image/webp",
 ];
 
-const environmentFileMaxBytes = 20 * 1024 * 1024;
+const environmentFileMaxBytes =
+  20 * 1024 * 1024;
+
 const environmentImageMaxPixels = 40_000_000;
 
 const partTextureOffsets: Record<
@@ -90,6 +118,32 @@ const partTextureOffsets: Record<
   "leg-a": [0.17, 0.11],
   "leg-b": [0.31, 0.23],
 };
+
+function getRequestedProductId(): AtelierProductId {
+  if (typeof window === "undefined") {
+    return DEFAULT_PRODUCT_ID;
+  }
+
+  const requestedProductId =
+    new URLSearchParams(
+      window.location.search,
+    ).get("model");
+
+  if (isAtelierProductId(requestedProductId)) {
+    return requestedProductId;
+  }
+
+  const storedProductId =
+    window.localStorage.getItem(
+      "atelier-riviera-model",
+    );
+
+  if (isAtelierProductId(storedProductId)) {
+    return storedProductId;
+  }
+
+  return DEFAULT_PRODUCT_ID;
+}
 
 function createInitialMaterials(
   product: AtelierProduct,
@@ -110,7 +164,9 @@ function disposeMaterial(
     : [material];
 
   for (const item of materials) {
-    const mapped = item as THREE.MeshStandardMaterial;
+    const mapped =
+      item as THREE.MeshStandardMaterial;
+
     mapped.map?.dispose();
     item.dispose();
   }
@@ -121,23 +177,50 @@ function prepareGeometry(
   part: ProductPart,
 ) {
   const geometry = mesh.geometry.clone();
-  const position = geometry.getAttribute("position");
-  const uv = new Float32Array(position.count * 2);
+  const position =
+    geometry.getAttribute("position");
 
-  for (let index = 0; index < position.count; index += 1) {
+  const uv = new Float32Array(
+    position.count * 2,
+  );
+
+  const bounds = new THREE.Box3().setFromBufferAttribute(
+    position as THREE.BufferAttribute,
+  );
+
+  const size = bounds.getSize(new THREE.Vector3());
+
+  const safeX = Math.max(size.x, 0.00001);
+  const safeY = Math.max(size.y, 0.00001);
+  const safeZ = Math.max(size.z, 0.00001);
+
+  for (
+    let index = 0;
+    index < position.count;
+    index += 1
+  ) {
     const x = position.getX(index);
     const y = position.getY(index);
     const z = position.getZ(index);
 
     if (part.role === "plane") {
-      uv[index * 2] = x + 0.5;
-      uv[index * 2 + 1] = z + 0.5;
+      uv[index * 2] =
+        (x - bounds.min.x) / safeX;
+
+      uv[index * 2 + 1] =
+        (z - bounds.min.z) / safeZ;
     } else if (part.id === "leg-a") {
-      uv[index * 2] = x + 0.5;
-      uv[index * 2 + 1] = y;
+      uv[index * 2] =
+        (x - bounds.min.x) / safeX;
+
+      uv[index * 2 + 1] =
+        (y - bounds.min.y) / safeY;
     } else {
-      uv[index * 2] = z + 0.5;
-      uv[index * 2 + 1] = y;
+      uv[index * 2] =
+        (z - bounds.min.z) / safeZ;
+
+      uv[index * 2 + 1] =
+        (y - bounds.min.y) / safeY;
     }
   }
 
@@ -145,8 +228,57 @@ function prepareGeometry(
     "uv",
     new THREE.BufferAttribute(uv, 2),
   );
+
   geometry.computeVertexNormals();
   mesh.geometry = geometry;
+}
+
+function normalizeModel(
+  model: THREE.Object3D,
+): number {
+  model.updateMatrixWorld(true);
+
+  const initialBounds =
+    new THREE.Box3().setFromObject(model);
+
+  const initialSize =
+    initialBounds.getSize(new THREE.Vector3());
+
+  const horizontalSize = Math.max(
+    initialSize.x,
+    initialSize.z,
+  );
+
+  if (
+    !Number.isFinite(horizontalSize) ||
+    horizontalSize <= 0
+  ) {
+    throw new Error(
+      "Il modello non contiene geometrie misurabili.",
+    );
+  }
+
+  const normalizationScale =
+    TARGET_MODEL_WIDTH / horizontalSize;
+
+  model.scale.multiplyScalar(normalizationScale);
+  model.updateMatrixWorld(true);
+
+  const normalizedBounds =
+    new THREE.Box3().setFromObject(model);
+
+  const normalizedCenter =
+    normalizedBounds.getCenter(
+      new THREE.Vector3(),
+    );
+
+  model.position.x -= normalizedCenter.x;
+  model.position.z -= normalizedCenter.z;
+  model.position.y -= normalizedBounds.min.y;
+
+  model.updateMatrixWorld(true);
+
+  return normalizationScale;
 }
 
 function drawImageCover(
@@ -162,8 +294,12 @@ function drawImageCover(
 
   const sourceWidth = width / scale;
   const sourceHeight = height / scale;
-  const sourceX = (image.naturalWidth - sourceWidth) / 2;
-  const sourceY = (image.naturalHeight - sourceHeight) / 2;
+
+  const sourceX =
+    (image.naturalWidth - sourceWidth) / 2;
+
+  const sourceY =
+    (image.naturalHeight - sourceHeight) / 2;
 
   context.drawImage(
     image,
@@ -179,20 +315,28 @@ function drawImageCover(
 }
 
 export default function AletteConfigurator() {
-  const initialProduct = atelierProducts["riviera-coffee"];
+  const initialProduct =
+    atelierProducts[DEFAULT_PRODUCT_ID];
 
-  const viewerRef = useRef<HTMLDivElement>(null);
-  const actionsRef = useRef<ViewerActions | null>(null);
+  const viewerRef =
+    useRef<HTMLDivElement>(null);
+
+  const actionsRef =
+    useRef<ViewerActions | null>(null);
 
   const materialsRef = useRef<PartMaterials>(
     createInitialMaterials(initialProduct),
   );
 
   const textureScaleRef = useRef(1);
+  const exposureRef = useRef(1);
 
   const partButtons = useRef<
     Partial<
-      Record<AtelierPartId, HTMLButtonElement | null>
+      Record<
+        AtelierPartId,
+        HTMLButtonElement | null
+      >
     >
   >({});
 
@@ -202,7 +346,8 @@ export default function AletteConfigurator() {
   const environmentImageRef =
     useRef<HTMLImageElement>(null);
 
-  const environmentUrlRef = useRef<string | null>(null);
+  const environmentUrlRef =
+    useRef<string | null>(null);
 
   const environmentPendingUrlRef =
     useRef<string | null>(null);
@@ -214,8 +359,12 @@ export default function AletteConfigurator() {
       initialEnvironmentPlacement,
     );
 
-  const [selectedProductId, setSelectedProductId] =
-    useState<AtelierProductId>("riviera-coffee");
+  const [
+    selectedProductId,
+    setSelectedProductId,
+  ] = useState<AtelierProductId>(
+    DEFAULT_PRODUCT_ID,
+  );
 
   const selectedProduct =
     atelierProducts[selectedProductId];
@@ -226,32 +375,48 @@ export default function AletteConfigurator() {
   const [selectedPart, setSelectedPart] =
     useState<AtelierPartId>("top");
 
-  const [partMaterials, setPartMaterials] =
-    useState<PartMaterials>(
-      createInitialMaterials(initialProduct),
-    );
+  const [
+    partMaterials,
+    setPartMaterials,
+  ] = useState<PartMaterials>(
+    createInitialMaterials(initialProduct),
+  );
 
-  const [textureScale, setTextureScale] = useState(1);
+  const [textureScale, setTextureScale] =
+    useState(1);
+
   const [exposure, setExposure] = useState(1);
-  const [exploded, setExploded] = useState(false);
-  const [autoRotate, setAutoRotate] = useState(false);
+
+  const [exploded, setExploded] =
+    useState(false);
+
+  const [autoRotate, setAutoRotate] =
+    useState(false);
 
   const [activeView, setActiveView] =
     useState<ViewName>("perspective");
 
-  const [environmentUrl, setEnvironmentUrl] =
-    useState<string | null>(null);
+  const [
+    environmentUrl,
+    setEnvironmentUrl,
+  ] = useState<string | null>(null);
 
-  const [environmentStatus, setEnvironmentStatus] =
-    useState<EnvironmentStatus>("idle");
+  const [
+    environmentStatus,
+    setEnvironmentStatus,
+  ] = useState<EnvironmentStatus>("idle");
 
-  const [environmentError, setEnvironmentError] =
-    useState<string | null>(null);
+  const [
+    environmentError,
+    setEnvironmentError,
+  ] = useState<string | null>(null);
 
-  const [environmentPlacement, setEnvironmentPlacement] =
-    useState<EnvironmentPlacement>(
-      initialEnvironmentPlacement,
-    );
+  const [
+    environmentPlacement,
+    setEnvironmentPlacement,
+  ] = useState<EnvironmentPlacement>(
+    initialEnvironmentPlacement,
+  );
 
   const [exportMessage, setExportMessage] =
     useState("");
@@ -271,15 +436,48 @@ export default function AletteConfigurator() {
 
     return (
       stoneMaterials.find(
-        (material) => material.id === materialId,
+        (material) =>
+          material.id === materialId,
       ) ?? stoneMaterials[0]
     );
   }, [partMaterials, selectedPart]);
 
-  const canApplyEverywhere = selectedProduct.parts.every(
-    (part) =>
-      selectedMaterial.allowedOn.includes(part.role),
-  );
+  const canApplyEverywhere =
+    selectedProduct.parts.every((part) =>
+      selectedMaterial.allowedOn.includes(
+        part.role,
+      ),
+    );
+
+  useEffect(() => {
+    const requestedProductId =
+      getRequestedProductId();
+
+    const requestedProduct =
+      getAtelierProduct(requestedProductId);
+
+    const requestedMaterials =
+      createInitialMaterials(requestedProduct);
+
+    window.localStorage.setItem(
+      "atelier-riviera-model",
+      requestedProductId,
+    );
+
+    materialsRef.current =
+      requestedMaterials;
+
+    setSelectedProductId(
+      requestedProductId,
+    );
+
+    setSelectedPart(
+      requestedProduct.parts[0].id,
+    );
+
+    setPartMaterials(requestedMaterials);
+    setStatus("loading");
+  }, []);
 
   useEffect(() => {
     materialsRef.current = partMaterials;
@@ -289,21 +487,31 @@ export default function AletteConfigurator() {
     textureScaleRef.current = textureScale;
   }, [textureScale]);
 
+  useEffect(() => {
+    exposureRef.current = exposure;
+  }, [exposure]);
+
   useEffect(
     () => () => {
       environmentLoadRequestRef.current += 1;
 
-      if (environmentPendingUrlRef.current) {
+      if (
+        environmentPendingUrlRef.current
+      ) {
         URL.revokeObjectURL(
           environmentPendingUrlRef.current,
         );
       }
 
       if (environmentUrlRef.current) {
-        URL.revokeObjectURL(environmentUrlRef.current);
+        URL.revokeObjectURL(
+          environmentUrlRef.current,
+        );
       }
 
-      environmentPendingUrlRef.current = null;
+      environmentPendingUrlRef.current =
+        null;
+
       environmentUrlRef.current = null;
     },
     [],
@@ -311,6 +519,7 @@ export default function AletteConfigurator() {
 
   useEffect(() => {
     const container = viewerRef.current;
+
     if (!container) return;
 
     const viewerContainer = container;
@@ -318,14 +527,28 @@ export default function AletteConfigurator() {
     let disposed = false;
     let animationFrame = 0;
     let explodedViewActive = false;
-    let environmentEnabled = false;
+    let environmentEnabled =
+      Boolean(environmentUrlRef.current);
 
     let currentEnvironmentPlacement =
       environmentPlacementRef.current;
 
-    let activeCameraView: ViewName = "perspective";
-    let cameraBeforeExplode: CameraPose | null = null;
-    let cameraTransition: CameraTransition | null = null;
+    let activeCameraView: ViewName =
+      "perspective";
+
+    let cameraBeforeExplode:
+      | CameraPose
+      | null = null;
+
+    let cameraTransition:
+      | CameraTransition
+      | null = null;
+
+    let modelTarget =
+      new THREE.Vector3(0, 0.18, 0);
+
+    let modelCameraDistance = 1.75;
+    let localExplodeMultiplier = 1;
 
     const meshes = new Map<
       AtelierPartId,
@@ -344,6 +567,7 @@ export default function AletteConfigurator() {
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
+
     const explodeTimers = new Set<number>();
     const downloadUrls = new Set<string>();
     const feedbackTimers = new Set<number>();
@@ -357,7 +581,10 @@ export default function AletteConfigurator() {
         preserveDrawingBuffer: true,
       });
     } catch {
-      queueMicrotask(() => setStatus("error"));
+      queueMicrotask(() =>
+        setStatus("error"),
+      );
+
       return;
     }
 
@@ -366,39 +593,62 @@ export default function AletteConfigurator() {
     );
 
     renderer.setSize(
-      Math.max(viewerContainer.clientWidth, 1),
-      Math.max(viewerContainer.clientHeight, 1),
+      Math.max(
+        viewerContainer.clientWidth,
+        1,
+      ),
+      Math.max(
+        viewerContainer.clientHeight,
+        1,
+      ),
     );
 
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.outputColorSpace =
+      THREE.SRGBColorSpace;
+
     renderer.toneMapping =
       THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = exposure;
+
+    renderer.toneMappingExposure =
+      exposureRef.current;
+
     renderer.setClearColor(0x000000, 0);
+
     renderer.shadowMap.enabled = true;
+
     renderer.shadowMap.type =
       THREE.PCFSoftShadowMap;
 
-    renderer.domElement.setAttribute("role", "img");
+    renderer.domElement.setAttribute(
+      "role",
+      "img",
+    );
 
     renderer.domElement.setAttribute(
       "aria-label",
-      `Modello tridimensionale interattivo di ${selectedProduct.name}. Usa i pulsanti delle viste per orientarlo.`,
+      `Modello tridimensionale interattivo di ${selectedProduct.name}.`,
     );
 
-    viewerContainer.appendChild(renderer.domElement);
+    viewerContainer.appendChild(
+      renderer.domElement,
+    );
 
     const scene = new THREE.Scene();
 
-    const camera = new THREE.PerspectiveCamera(
-      35,
-      Math.max(viewerContainer.clientWidth, 1) /
-        Math.max(viewerContainer.clientHeight, 1),
-      0.01,
-      30,
-    );
-
-    camera.position.set(1.38, 0.92, 1.38);
+    const camera =
+      new THREE.PerspectiveCamera(
+        35,
+        Math.max(
+          viewerContainer.clientWidth,
+          1,
+        ) /
+          Math.max(
+            viewerContainer.clientHeight,
+            1,
+          ),
+        0.01,
+        50,
+      );
 
     const controls = new OrbitControls(
       camera,
@@ -407,10 +657,10 @@ export default function AletteConfigurator() {
 
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
-    controls.target.set(0, 0.19, 0);
     controls.minDistance = 0.5;
-    controls.maxDistance = 8;
-    controls.maxPolarAngle = Math.PI * 0.495;
+    controls.maxDistance = 10;
+    controls.maxPolarAngle =
+      Math.PI * 0.495;
     controls.autoRotateSpeed = 0.7;
 
     const prefersReducedMotion = () =>
@@ -421,18 +671,27 @@ export default function AletteConfigurator() {
     function assembledCameraPose(
       view: ViewName,
     ): CameraPose {
-      const target = new THREE.Vector3(0, 0.18, 0);
+      const target = modelTarget.clone();
+      const distance = modelCameraDistance;
 
       if (view === "front") {
         return {
-          position: new THREE.Vector3(0, 0.36, 1.75),
+          position: new THREE.Vector3(
+            0,
+            target.y + distance * 0.1,
+            distance,
+          ),
           target,
         };
       }
 
       if (view === "side") {
         return {
-          position: new THREE.Vector3(1.75, 0.36, 0),
+          position: new THREE.Vector3(
+            distance,
+            target.y + distance * 0.1,
+            0,
+          ),
           target,
         };
       }
@@ -441,18 +700,18 @@ export default function AletteConfigurator() {
         return {
           position: new THREE.Vector3(
             0.001,
-            2.15,
+            target.y + distance * 1.2,
             0.001,
           ),
-          target: new THREE.Vector3(0, 0.12, 0),
+          target,
         };
       }
 
       return {
         position: new THREE.Vector3(
-          1.38,
-          0.92,
-          1.38,
+          distance * 0.78,
+          target.y + distance * 0.42,
+          distance * 0.78,
         ),
         target,
       };
@@ -461,18 +720,37 @@ export default function AletteConfigurator() {
     function explodedCameraPose(
       view: ViewName,
     ): CameraPose {
-      const target = new THREE.Vector3(0, 0.36, 0);
+      const target = modelTarget
+        .clone()
+        .add(
+          new THREE.Vector3(
+            0,
+            0.16,
+            0,
+          ),
+        );
+
+      const distance =
+        modelCameraDistance * 1.3;
 
       if (view === "front") {
         return {
-          position: new THREE.Vector3(0, 0.72, 2.22),
+          position: new THREE.Vector3(
+            0,
+            target.y + distance * 0.15,
+            distance,
+          ),
           target,
         };
       }
 
       if (view === "side") {
         return {
-          position: new THREE.Vector3(2.22, 0.72, 0),
+          position: new THREE.Vector3(
+            distance,
+            target.y + distance * 0.15,
+            0,
+          ),
           target,
         };
       }
@@ -481,18 +759,18 @@ export default function AletteConfigurator() {
         return {
           position: new THREE.Vector3(
             0.001,
-            2.78,
+            target.y + distance * 1.15,
             0.001,
           ),
-          target: new THREE.Vector3(0, 0.34, 0),
+          target,
         };
       }
 
       return {
         position: new THREE.Vector3(
-          1.82,
-          1.32,
-          1.82,
+          distance * 0.72,
+          target.y + distance * 0.46,
+          distance * 0.72,
         ),
         target,
       };
@@ -504,15 +782,22 @@ export default function AletteConfigurator() {
     ) {
       if (prefersReducedMotion()) {
         cameraTransition = null;
-        camera.position.copy(pose.position);
+
+        camera.position.copy(
+          pose.position,
+        );
+
         controls.target.copy(pose.target);
         controls.update();
+
         return;
       }
 
       cameraTransition = {
-        fromPosition: camera.position.clone(),
-        fromTarget: controls.target.clone(),
+        fromPosition:
+          camera.position.clone(),
+        fromTarget:
+          controls.target.clone(),
         position: pose.position.clone(),
         target: pose.target.clone(),
         startedAt: performance.now(),
@@ -529,52 +814,73 @@ export default function AletteConfigurator() {
       cancelCameraTransition,
     );
 
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    const roomEnvironment = new RoomEnvironment();
+    const pmrem =
+      new THREE.PMREMGenerator(renderer);
 
-    const environmentTarget = pmrem.fromScene(
-      roomEnvironment,
-      0.04,
-    );
+    const roomEnvironment =
+      new RoomEnvironment();
 
-    scene.environment = environmentTarget.texture;
+    const environmentTarget =
+      pmrem.fromScene(
+        roomEnvironment,
+        0.04,
+      );
+
+    scene.environment =
+      environmentTarget.texture;
 
     roomEnvironment.dispose();
     pmrem.dispose();
 
-    const hemisphere = new THREE.HemisphereLight(
-      0xffffff,
-      0x7d756b,
-      1.15,
-    );
+    const hemisphere =
+      new THREE.HemisphereLight(
+        0xffffff,
+        0x7d756b,
+        1.15,
+      );
 
     scene.add(hemisphere);
 
-    const keyLight = new THREE.DirectionalLight(
-      0xffffff,
-      2.4,
+    const keyLight =
+      new THREE.DirectionalLight(
+        0xffffff,
+        2.4,
+      );
+
+    keyLight.position.set(
+      2.5,
+      4.2,
+      2.2,
     );
 
-    keyLight.position.set(2.5, 4.2, 2.2);
     keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(1024, 1024);
+
+    keyLight.shadow.mapSize.set(
+      1024,
+      1024,
+    );
+
     keyLight.shadow.camera.near = 0.1;
     keyLight.shadow.camera.far = 10;
 
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(
-      0xfff1df,
-      0.75,
+    const fillLight =
+      new THREE.DirectionalLight(
+        0xfff1df,
+        0.75,
+      );
+
+    fillLight.position.set(
+      -2.5,
+      1.8,
+      -1.5,
     );
 
-    fillLight.position.set(-2.5, 1.8, -1.5);
     scene.add(fillLight);
 
-    const floorGeometry = new THREE.CircleGeometry(
-      3.2,
-      96,
-    );
+    const floorGeometry =
+      new THREE.CircleGeometry(3.2, 96);
 
     const floorMaterial =
       new THREE.MeshStandardMaterial({
@@ -594,32 +900,42 @@ export default function AletteConfigurator() {
 
     scene.add(floor);
 
-    const shadowMaterial = new THREE.ShadowMaterial({
-      color: 0x000000,
-      opacity:
-        environmentPlacementRef.current.shadow,
-      transparent: true,
-      depthWrite: false,
-    });
+    const shadowMaterial =
+      new THREE.ShadowMaterial({
+        color: 0x000000,
+        opacity:
+          currentEnvironmentPlacement.shadow,
+        transparent: true,
+        depthWrite: false,
+      });
 
     const shadowFloor = new THREE.Mesh(
       floorGeometry,
       shadowMaterial,
     );
 
-    shadowFloor.rotation.x = -Math.PI / 2;
+    shadowFloor.rotation.x =
+      -Math.PI / 2;
+
     shadowFloor.position.y = -0.001;
     shadowFloor.receiveShadow = true;
-    shadowFloor.visible = false;
+
+    shadowFloor.visible =
+      environmentEnabled;
+
+    floor.visible = !environmentEnabled;
 
     scene.add(shadowFloor);
 
-    const textureLoader = new THREE.TextureLoader();
+    const textureLoader =
+      new THREE.TextureLoader();
 
     function getBaseTexture(
       material: StoneMaterial,
     ) {
-      let promise = texturePromises.get(material.id);
+      let promise = texturePromises.get(
+        material.id,
+      );
 
       if (!promise) {
         promise = textureLoader
@@ -627,18 +943,26 @@ export default function AletteConfigurator() {
           .then((texture) => {
             texture.colorSpace =
               THREE.SRGBColorSpace;
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
 
-            texture.anisotropy = Math.min(
-              renderer.capabilities.getMaxAnisotropy(),
-              12,
-            );
+            texture.wrapS =
+              THREE.RepeatWrapping;
+
+            texture.wrapT =
+              THREE.RepeatWrapping;
+
+            texture.anisotropy =
+              Math.min(
+                renderer.capabilities.getMaxAnisotropy(),
+                12,
+              );
 
             return texture;
           });
 
-        texturePromises.set(material.id, promise);
+        texturePromises.set(
+          material.id,
+          promise,
+        );
       }
 
       return promise;
@@ -650,7 +974,10 @@ export default function AletteConfigurator() {
       scale: number,
     ) {
       const image = texture.image as
-        | { width?: number; height?: number }
+        | {
+            width?: number;
+            height?: number;
+          }
         | undefined;
 
       const aspect =
@@ -666,7 +993,7 @@ export default function AletteConfigurator() {
       );
 
       texture.offset.set(
-        ...(partTextureOffsets[partId] ?? [0, 0]),
+        ...partTextureOffsets[partId],
       );
 
       texture.needsUpdate = true;
@@ -678,27 +1005,37 @@ export default function AletteConfigurator() {
     ) {
       const mesh = meshes.get(partId);
 
-      const part = selectedProduct.parts.find(
-        (entry) => entry.id === partId,
-      );
+      const part =
+        selectedProduct.parts.find(
+          (entry) =>
+            entry.id === partId,
+        );
 
-      const material = stoneMaterials.find(
-        (entry) => entry.id === materialId,
-      );
+      const material =
+        stoneMaterials.find(
+          (entry) =>
+            entry.id === materialId,
+        );
 
       if (
         !mesh ||
         !part ||
         !material ||
-        !material.allowedOn.includes(part.role)
+        !material.allowedOn.includes(
+          part.role,
+        )
       ) {
         return;
       }
 
       const requestId =
-        (materialRequest.get(partId) ?? 0) + 1;
+        (materialRequest.get(partId) ??
+          0) + 1;
 
-      materialRequest.set(partId, requestId);
+      materialRequest.set(
+        partId,
+        requestId,
+      );
 
       try {
         const baseTexture =
@@ -706,15 +1043,20 @@ export default function AletteConfigurator() {
 
         if (
           disposed ||
-          materialRequest.get(partId) !== requestId
+          materialRequest.get(partId) !==
+            requestId
         ) {
           return;
         }
 
-        const texture = baseTexture.clone();
+        const texture =
+          baseTexture.clone();
 
-        texture.wrapS = THREE.RepeatWrapping;
-        texture.wrapT = THREE.RepeatWrapping;
+        texture.wrapS =
+          THREE.RepeatWrapping;
+
+        texture.wrapT =
+          THREE.RepeatWrapping;
 
         updateMapScale(
           texture,
@@ -726,17 +1068,22 @@ export default function AletteConfigurator() {
           new THREE.MeshPhysicalMaterial({
             map: texture,
             color: 0xffffff,
-            roughness: material.roughness,
+            roughness:
+              material.roughness,
             metalness: 0,
             clearcoat:
-              part.role === "plane" ? 0.08 : 0.04,
+              part.role === "plane"
+                ? 0.08
+                : 0.04,
             clearcoatRoughness: 0.55,
             envMapIntensity: 0.65,
             side: THREE.DoubleSide,
           });
 
         if (mesh.material) {
-          disposeMaterial(mesh.material);
+          disposeMaterial(
+            mesh.material,
+          );
         }
 
         mesh.material = nextMaterial;
@@ -747,7 +1094,9 @@ export default function AletteConfigurator() {
         );
 
         if (!disposed) {
-          queueMicrotask(() => setStatus("error"));
+          queueMicrotask(() =>
+            setStatus("error"),
+          );
         }
       }
     }
@@ -755,7 +1104,10 @@ export default function AletteConfigurator() {
     function updateTextureScaleValue(
       scale: number,
     ) {
-      for (const [partId, mesh] of meshes) {
+      for (const [
+        partId,
+        mesh,
+      ] of meshes) {
         const material =
           mesh.material as THREE.MeshStandardMaterial;
 
@@ -770,9 +1122,11 @@ export default function AletteConfigurator() {
     }
 
     function applyEnvironmentProjection(
-      placement = currentEnvironmentPlacement,
+      placement =
+        currentEnvironmentPlacement,
     ) {
-      currentEnvironmentPlacement = placement;
+      currentEnvironmentPlacement =
+        placement;
 
       camera.zoom = environmentEnabled
         ? placement.scale
@@ -792,8 +1146,10 @@ export default function AletteConfigurator() {
         camera.setViewOffset(
           width,
           height,
-          (-placement.x / 100) * width,
-          (placement.y / 100) * height,
+          (-placement.x / 100) *
+            width,
+          (placement.y / 100) *
+            height,
           width,
           height,
         );
@@ -802,10 +1158,18 @@ export default function AletteConfigurator() {
       }
 
       camera.updateProjectionMatrix();
-      floor.visible = !environmentEnabled;
-      shadowFloor.visible = environmentEnabled;
-      shadowMaterial.opacity = placement.shadow;
-      shadowMaterial.needsUpdate = true;
+
+      floor.visible =
+        !environmentEnabled;
+
+      shadowFloor.visible =
+        environmentEnabled;
+
+      shadowMaterial.opacity =
+        placement.shadow;
+
+      shadowMaterial.needsUpdate =
+        true;
     }
 
     function clearExplodeTimers() {
@@ -822,84 +1186,102 @@ export default function AletteConfigurator() {
     ) {
       const mesh = meshes.get(partId);
 
-      const part = selectedProduct.parts.find(
-        (entry) => entry.id === partId,
-      );
+      const part =
+        selectedProduct.parts.find(
+          (entry) =>
+            entry.id === partId,
+        );
 
       if (!mesh || !part) return;
 
       const base =
-        mesh.userData.basePosition as THREE.Vector3;
+        mesh.userData
+          .basePosition as THREE.Vector3;
+
+      const worldOffset =
+        new THREE.Vector3(
+          ...part.explodeOffset,
+        );
+
+      const localOffset =
+        worldOffset.multiplyScalar(
+          localExplodeMultiplier,
+        );
 
       const target = value
-        ? base
-            .clone()
-            .add(
-              new THREE.Vector3(
-                ...part.explodeOffset,
-              ),
-            )
+        ? base.clone().add(localOffset)
         : base.clone();
 
-      mesh.userData.targetPosition = target;
+      mesh.userData.targetPosition =
+        target;
 
       if (prefersReducedMotion()) {
         mesh.position.copy(target);
       }
     }
 
-    function setExplodedView(value: boolean) {
+    function setExplodedView(
+      value: boolean,
+    ) {
       clearExplodeTimers();
 
-      if (value && !explodedViewActive) {
+      if (
+        value &&
+        !explodedViewActive
+      ) {
         cameraBeforeExplode = {
-          position: camera.position.clone(),
-          target: controls.target.clone(),
+          position:
+            camera.position.clone(),
+          target:
+            controls.target.clone(),
         };
       }
 
       explodedViewActive = value;
 
-      if (value) {
-        selectedProduct.parts.forEach(
-          (part, index) => {
-            const timer = window.setTimeout(
-              () => {
-                explodeTimers.delete(timer);
-                setPartExploded(part.id, true);
-              },
-              prefersReducedMotion()
-                ? 0
-                : index * 150,
+      const orderedParts = value
+        ? selectedProduct.parts
+        : [...selectedProduct.parts]
+            .reverse();
+
+      orderedParts.forEach(
+        (part, index) => {
+          const run = () =>
+            setPartExploded(
+              part.id,
+              value,
             );
 
-            explodeTimers.add(timer);
-          },
-        );
+          if (prefersReducedMotion()) {
+            run();
+            return;
+          }
 
+          const timer =
+            window.setTimeout(() => {
+              explodeTimers.delete(
+                timer,
+              );
+
+              run();
+            }, index * 140);
+
+          explodeTimers.add(timer);
+        },
+      );
+
+      if (value) {
         moveCamera(
-          explodedCameraPose(activeCameraView),
+          explodedCameraPose(
+            activeCameraView,
+          ),
         );
       } else {
-        [...selectedProduct.parts]
-          .reverse()
-          .forEach((part, index) => {
-            const timer = window.setTimeout(
-              () => {
-                explodeTimers.delete(timer);
-                setPartExploded(part.id, false);
-              },
-              prefersReducedMotion()
-                ? 0
-                : index * 120,
-            );
-
-            explodeTimers.add(timer);
-          });
-
         moveCamera(
           cameraBeforeExplode ??
-            assembledCameraPose(activeCameraView),
+            assembledCameraPose(
+              activeCameraView,
+            ),
         );
 
         cameraBeforeExplode = null;
@@ -913,7 +1295,8 @@ export default function AletteConfigurator() {
         assembledCameraPose(view);
 
       if (explodedViewActive) {
-        cameraBeforeExplode = assembledPose;
+        cameraBeforeExplode =
+          assembledPose;
       }
 
       moveCamera(
@@ -936,24 +1319,33 @@ export default function AletteConfigurator() {
         setExportMessage(
           "Attendi che la fotografia sia pronta prima di salvare.",
         );
+
         return;
       }
 
-      setExportMessage("Preparo l’immagine…");
+      setExportMessage(
+        "Preparo l’immagine…",
+      );
+
       renderer.render(scene, camera);
 
       const output =
         document.createElement("canvas");
 
-      output.width = renderer.domElement.width;
-      output.height = renderer.domElement.height;
+      output.width =
+        renderer.domElement.width;
 
-      const context = output.getContext("2d");
+      output.height =
+        renderer.domElement.height;
+
+      const context =
+        output.getContext("2d");
 
       if (!context) {
         setExportMessage(
           "Non sono riuscito a creare l’immagine. Riprova.",
         );
+
         return;
       }
 
@@ -984,6 +1376,7 @@ export default function AletteConfigurator() {
           setExportMessage(
             "Non sono riuscito a creare l’immagine. Riprova.",
           );
+
           return;
         }
 
@@ -992,13 +1385,15 @@ export default function AletteConfigurator() {
 
         downloadUrls.add(downloadUrl);
 
-        const link = document.createElement("a");
+        const link =
+          document.createElement("a");
 
         link.href = downloadUrl;
 
-        link.download = environmentEnabled
-          ? `riviera-design-${selectedProduct.id}-ambiente-${Date.now()}.png`
-          : `riviera-design-${selectedProduct.id}-${Date.now()}.png`;
+        link.download =
+          environmentEnabled
+            ? `riviera-design-${selectedProduct.id}-ambiente-${Date.now()}.png`
+            : `riviera-design-${selectedProduct.id}-${Date.now()}.png`;
 
         document.body.appendChild(link);
         link.click();
@@ -1008,46 +1403,67 @@ export default function AletteConfigurator() {
           "Immagine salvata sul dispositivo.",
         );
 
-        const feedbackTimer = window.setTimeout(
-          () => {
-            feedbackTimers.delete(feedbackTimer);
+        const feedbackTimer =
+          window.setTimeout(() => {
+            feedbackTimers.delete(
+              feedbackTimer,
+            );
 
             if (!disposed) {
               setExportMessage("");
             }
-          },
-          3200,
+          }, 3200);
+
+        feedbackTimers.add(
+          feedbackTimer,
         );
 
-        feedbackTimers.add(feedbackTimer);
-
         window.setTimeout(() => {
-          URL.revokeObjectURL(downloadUrl);
-          downloadUrls.delete(downloadUrl);
+          URL.revokeObjectURL(
+            downloadUrl,
+          );
+
+          downloadUrls.delete(
+            downloadUrl,
+          );
         }, 0);
       }, "image/png");
     }
 
     actionsRef.current = {
       applyMaterial,
-      updateTextureScale: updateTextureScaleValue,
+
+      updateTextureScale:
+        updateTextureScaleValue,
+
       setExposure: (value) => {
-        renderer.toneMappingExposure = value;
+        renderer.toneMappingExposure =
+          value;
       },
+
       setExploded: setExplodedView,
+
       setAutoRotate: (value) => {
         controls.autoRotate =
-          value && !prefersReducedMotion();
+          value &&
+          !prefersReducedMotion();
       },
+
       setView,
-      setEnvironmentEnabled: (value) => {
+
+      setEnvironmentEnabled: (
+        value,
+      ) => {
         environmentEnabled = value;
+
         applyEnvironmentProjection(
           currentEnvironmentPlacement,
         );
       },
+
       updateEnvironmentPlacement:
         applyEnvironmentProjection,
+
       saveImage,
     };
 
@@ -1058,33 +1474,51 @@ export default function AletteConfigurator() {
       .then(async (gltf) => {
         if (disposed) return;
 
-        const availableMeshes: string[] = [];
+        const availableMeshes:
+          string[] = [];
 
-        gltf.scene.traverse((object) => {
-          if (object instanceof THREE.Mesh) {
-            availableMeshes.push(object.name);
-          }
-        });
+        gltf.scene.traverse(
+          (object) => {
+            if (
+              object instanceof THREE.Mesh
+            ) {
+              availableMeshes.push(
+                object.name,
+              );
+            }
+          },
+        );
 
         console.info(
           `[Atelier] Mesh di ${selectedProduct.model}:`,
           availableMeshes,
         );
 
-        scene.add(gltf.scene);
+        for (
+          const part of
+          selectedProduct.parts
+        ) {
+          const object =
+            gltf.scene.getObjectByName(
+              part.meshName,
+            );
 
-        for (const part of selectedProduct.parts) {
-          const object = gltf.scene.getObjectByName(
-            part.meshName,
-          );
-
-          if (!(object instanceof THREE.Mesh)) {
+          if (
+            !(
+              object instanceof
+              THREE.Mesh
+            )
+          ) {
             throw new Error(
-              `Componente "${part.meshName}" non trovato in ${selectedProduct.model}. Mesh disponibili: ${availableMeshes.join(", ")}`,
+              `Componente "${part.meshName}" non trovato. Mesh disponibili: ${availableMeshes.join(", ")}`,
             );
           }
 
-          prepareGeometry(object, part);
+          prepareGeometry(
+            object,
+            part,
+          );
+
           object.castShadow = true;
           object.receiveShadow = true;
 
@@ -1097,13 +1531,76 @@ export default function AletteConfigurator() {
           meshes.set(part.id, object);
         }
 
-        await Promise.all(
-          selectedProduct.parts.map((part) =>
-            applyMaterial(
-              part.id,
-              materialsRef.current[part.id] ??
-                DEFAULT_MATERIAL_ID,
+        const normalizationScale =
+          normalizeModel(gltf.scene);
+
+        localExplodeMultiplier =
+          1 /
+          Math.max(
+            normalizationScale,
+            0.000001,
+          );
+
+        scene.add(gltf.scene);
+
+        const modelBounds =
+          new THREE.Box3().setFromObject(
+            gltf.scene,
+          );
+
+        const modelSize =
+          modelBounds.getSize(
+            new THREE.Vector3(),
+          );
+
+        modelTarget =
+          new THREE.Vector3(
+            0,
+            Math.max(
+              modelSize.y * 0.45,
+              0.12,
             ),
+            0,
+          );
+
+        modelCameraDistance =
+          Math.max(
+            modelSize.x,
+            modelSize.y,
+            modelSize.z,
+          ) * 1.65;
+
+        controls.minDistance =
+          modelCameraDistance * 0.45;
+
+        controls.maxDistance =
+          modelCameraDistance * 5;
+
+        const initialPose =
+          assembledCameraPose(
+            "perspective",
+          );
+
+        camera.position.copy(
+          initialPose.position,
+        );
+
+        controls.target.copy(
+          initialPose.target,
+        );
+
+        controls.update();
+
+        await Promise.all(
+          selectedProduct.parts.map(
+            (part) =>
+              applyMaterial(
+                part.id,
+                materialsRef.current[
+                  part.id
+                ] ??
+                  DEFAULT_MATERIAL_ID,
+              ),
           ),
         );
 
@@ -1122,20 +1619,29 @@ export default function AletteConfigurator() {
         }
       });
 
-    let pointerStart = { x: 0, y: 0 };
+    let pointerStart = {
+      x: 0,
+      y: 0,
+    };
 
-    function onPointerDown(event: PointerEvent) {
+    function onPointerDown(
+      event: PointerEvent,
+    ) {
       pointerStart = {
         x: event.clientX,
         y: event.clientY,
       };
     }
 
-    function onPointerUp(event: PointerEvent) {
+    function onPointerUp(
+      event: PointerEvent,
+    ) {
       if (
         Math.hypot(
-          event.clientX - pointerStart.x,
-          event.clientY - pointerStart.y,
+          event.clientX -
+            pointerStart.x,
+          event.clientY -
+            pointerStart.y,
         ) > 5
       ) {
         return;
@@ -1145,30 +1651,38 @@ export default function AletteConfigurator() {
         renderer.domElement.getBoundingClientRect();
 
       pointer.x =
-        ((event.clientX - rect.left) /
+        ((event.clientX -
+          rect.left) /
           rect.width) *
           2 -
         1;
 
       pointer.y =
-        -((event.clientY - rect.top) /
+        -((event.clientY -
+          rect.top) /
           rect.height) *
           2 +
         1;
 
-      raycaster.setFromCamera(pointer, camera);
+      raycaster.setFromCamera(
+        pointer,
+        camera,
+      );
 
-      const hit = raycaster.intersectObjects(
-        [...meshes.values()],
-        false,
-      )[0];
+      const hit =
+        raycaster.intersectObjects(
+          [...meshes.values()],
+          false,
+        )[0];
 
       if (!hit) return;
 
-      const part = selectedProduct.parts.find(
-        (entry) =>
-          entry.meshName === hit.object.name,
-      );
+      const part =
+        selectedProduct.parts.find(
+          (entry) =>
+            entry.meshName ===
+            hit.object.name,
+        );
 
       if (part) {
         setSelectedPart(part.id);
@@ -1185,37 +1699,53 @@ export default function AletteConfigurator() {
       onPointerUp,
     );
 
-    const resizeObserver = new ResizeObserver(() => {
-      const width = Math.max(
-        viewerContainer.clientWidth,
-        1,
-      );
+    const resizeObserver =
+      new ResizeObserver(() => {
+        const width = Math.max(
+          viewerContainer.clientWidth,
+          1,
+        );
 
-      const height = Math.max(
-        viewerContainer.clientHeight,
-        1,
-      );
+        const height = Math.max(
+          viewerContainer.clientHeight,
+          1,
+        );
 
-      camera.aspect = width / height;
-      renderer.setSize(width, height, false);
+        camera.aspect =
+          width / height;
 
-      applyEnvironmentProjection(
-        currentEnvironmentPlacement,
-      );
-    });
+        renderer.setSize(
+          width,
+          height,
+          false,
+        );
 
-    resizeObserver.observe(viewerContainer);
+        applyEnvironmentProjection(
+          currentEnvironmentPlacement,
+        );
+      });
 
-    function render(now = performance.now()) {
+    resizeObserver.observe(
+      viewerContainer,
+    );
+
+    function render(
+      now = performance.now(),
+    ) {
       if (cameraTransition) {
         const progress = Math.min(
-          (now - cameraTransition.startedAt) /
+          (now -
+            cameraTransition.startedAt) /
             cameraTransition.duration,
           1,
         );
 
         const eased =
-          1 - Math.pow(1 - progress, 3);
+          1 -
+          Math.pow(
+            1 - progress,
+            3,
+          );
 
         camera.position.lerpVectors(
           cameraTransition.fromPosition,
@@ -1237,18 +1767,24 @@ export default function AletteConfigurator() {
       for (const mesh of meshes.values()) {
         const target =
           mesh.userData
-            .targetPosition as THREE.Vector3 | undefined;
+            .targetPosition as
+            | THREE.Vector3
+            | undefined;
 
         if (!target) continue;
 
         if (prefersReducedMotion()) {
           mesh.position.copy(target);
         } else {
-          mesh.position.lerp(target, 0.1);
+          mesh.position.lerp(
+            target,
+            0.1,
+          );
 
           if (
-            mesh.position.distanceToSquared(target) <
-            0.0000001
+            mesh.position.distanceToSquared(
+              target,
+            ) < 0.0000001
           ) {
             mesh.position.copy(target);
           }
@@ -1259,7 +1795,9 @@ export default function AletteConfigurator() {
       renderer.render(scene, camera);
 
       animationFrame =
-        window.requestAnimationFrame(render);
+        window.requestAnimationFrame(
+          render,
+        );
     }
 
     render();
@@ -1268,7 +1806,10 @@ export default function AletteConfigurator() {
       disposed = true;
       actionsRef.current = null;
 
-      window.cancelAnimationFrame(animationFrame);
+      window.cancelAnimationFrame(
+        animationFrame,
+      );
+
       clearExplodeTimers();
       resizeObserver.disconnect();
 
@@ -1293,13 +1834,20 @@ export default function AletteConfigurator() {
         mesh.geometry.dispose();
 
         if (mesh.material) {
-          disposeMaterial(mesh.material);
+          disposeMaterial(
+            mesh.material,
+          );
         }
       }
 
-      for (const promise of texturePromises.values()) {
+      for (
+        const promise of
+        texturePromises.values()
+      ) {
         promise
-          .then((texture) => texture.dispose())
+          .then((texture) =>
+            texture.dispose(),
+          )
           .catch(() => undefined);
       }
 
@@ -1307,7 +1855,9 @@ export default function AletteConfigurator() {
         URL.revokeObjectURL(url);
       }
 
-      for (const timer of feedbackTimers) {
+      for (
+        const timer of feedbackTimers
+      ) {
         window.clearTimeout(timer);
       }
 
@@ -1318,32 +1868,7 @@ export default function AletteConfigurator() {
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [selectedProduct, exposure]);
-
-  function chooseProduct(
-    productId: AtelierProductId,
-  ) {
-    if (productId === selectedProductId) return;
-
-    const nextProduct = atelierProducts[productId];
-    const nextMaterials =
-      createInitialMaterials(nextProduct);
-
-    materialsRef.current = nextMaterials;
-    textureScaleRef.current = 1;
-
-    setStatus("loading");
-    setSelectedProductId(productId);
-    setSelectedPart(nextProduct.parts[0].id);
-    setPartMaterials(nextMaterials);
-    setTextureScale(1);
-    setExploded(false);
-    setAutoRotate(false);
-    setActiveView("perspective");
-    setExportMessage("");
-
-    actionsRef.current?.setAutoRotate(false);
-  }
+  }, [selectedProduct]);
 
   function openEnvironmentPicker() {
     if (
@@ -1356,7 +1881,9 @@ export default function AletteConfigurator() {
     setEnvironmentError(null);
 
     if (environmentInputRef.current) {
-      environmentInputRef.current.value = "";
+      environmentInputRef.current.value =
+        "";
+
       environmentInputRef.current.click();
     }
   }
@@ -1365,36 +1892,74 @@ export default function AletteConfigurator() {
     event: ChangeEvent<HTMLInputElement>,
   ) {
     const file = event.target.files?.[0];
+
     event.target.value = "";
 
     if (!file) return;
 
-    if (!environmentFileTypes.includes(file.type)) {
+    if (
+      !environmentFileTypes.includes(
+        file.type,
+      )
+    ) {
       setEnvironmentError(
         "Formato non supportato. Usa una foto JPG, PNG o WebP.",
       );
+
       setEnvironmentStatus(
-        environmentUrlRef.current ? "ready" : "error",
+        environmentUrlRef.current
+          ? "ready"
+          : "error",
       );
+
+      return;
+    }
+
+    if (file.size === 0) {
+      setEnvironmentError(
+        "La fotografia è vuota.",
+      );
+
+      setEnvironmentStatus(
+        environmentUrlRef.current
+          ? "ready"
+          : "error",
+      );
+
       return;
     }
 
     if (
-      file.size === 0 ||
-      file.size > environmentFileMaxBytes
+      file.size >
+      environmentFileMaxBytes
     ) {
       setEnvironmentError(
-        file.size === 0
-          ? "La fotografia è vuota."
-          : "La foto supera 20 MB.",
+        "La foto supera 20 MB.",
       );
+
+      setEnvironmentStatus(
+        environmentUrlRef.current
+          ? "ready"
+          : "error",
+      );
+
       return;
     }
 
     const requestId =
-      environmentLoadRequestRef.current + 1;
+      environmentLoadRequestRef.current +
+      1;
 
-    environmentLoadRequestRef.current = requestId;
+    environmentLoadRequestRef.current =
+      requestId;
+
+    if (
+      environmentPendingUrlRef.current
+    ) {
+      URL.revokeObjectURL(
+        environmentPendingUrlRef.current,
+      );
+    }
 
     const candidateUrl =
       URL.createObjectURL(file);
@@ -1404,61 +1969,116 @@ export default function AletteConfigurator() {
 
     setEnvironmentStatus("loading");
     setEnvironmentError(null);
+    setExportMessage("");
 
     const candidate = new Image();
 
+    candidate.decoding = "async";
+
     candidate.onload = () => {
       if (
-        environmentLoadRequestRef.current !== requestId
+        environmentLoadRequestRef.current !==
+        requestId
       ) {
-        URL.revokeObjectURL(candidateUrl);
+        URL.revokeObjectURL(
+          candidateUrl,
+        );
+
         return;
       }
 
       if (
+        candidate.naturalWidth < 1 ||
+        candidate.naturalHeight < 1 ||
         candidate.naturalWidth *
           candidate.naturalHeight >
-        environmentImageMaxPixels
+          environmentImageMaxPixels
       ) {
-        URL.revokeObjectURL(candidateUrl);
+        URL.revokeObjectURL(
+          candidateUrl,
+        );
+
+        environmentPendingUrlRef.current =
+          null;
+
         setEnvironmentError(
           "La foto è troppo grande per questo dispositivo.",
         );
-        setEnvironmentStatus("error");
+
+        setEnvironmentStatus(
+          environmentUrlRef.current
+            ? "ready"
+            : "error",
+        );
+
         return;
       }
 
       const previousUrl =
         environmentUrlRef.current;
 
-      environmentPendingUrlRef.current = null;
-      environmentUrlRef.current = candidateUrl;
+      environmentPendingUrlRef.current =
+        null;
+
+      environmentUrlRef.current =
+        candidateUrl;
 
       setEnvironmentUrl(candidateUrl);
       setEnvironmentStatus("ready");
+      setEnvironmentError(null);
 
       actionsRef.current?.setEnvironmentEnabled(
         true,
       );
 
-      if (previousUrl) {
-        URL.revokeObjectURL(previousUrl);
+      actionsRef.current?.updateEnvironmentPlacement(
+        environmentPlacementRef.current,
+      );
+
+      if (
+        previousUrl &&
+        previousUrl !== candidateUrl
+      ) {
+        window.setTimeout(
+          () =>
+            URL.revokeObjectURL(
+              previousUrl,
+            ),
+          0,
+        );
       }
     };
 
     candidate.onerror = () => {
       URL.revokeObjectURL(candidateUrl);
+
+      if (
+        environmentLoadRequestRef.current !==
+        requestId
+      ) {
+        return;
+      }
+
+      environmentPendingUrlRef.current =
+        null;
+
       setEnvironmentError(
         "Non riesco a leggere questa foto.",
       );
-      setEnvironmentStatus("error");
+
+      setEnvironmentStatus(
+        environmentUrlRef.current
+          ? "ready"
+          : "error",
+      );
     };
 
     candidate.src = candidateUrl;
   }
 
   function changeEnvironmentPlacement(
-    property: keyof EnvironmentPlacement,
+    property:
+      keyof EnvironmentPlacement,
     value: number,
   ) {
     const next = {
@@ -1466,7 +2086,9 @@ export default function AletteConfigurator() {
       [property]: value,
     };
 
-    environmentPlacementRef.current = next;
+    environmentPlacementRef.current =
+      next;
+
     setEnvironmentPlacement(next);
 
     actionsRef.current?.updateEnvironmentPlacement(
@@ -1474,19 +2096,68 @@ export default function AletteConfigurator() {
     );
   }
 
+  function resetEnvironmentPlacement() {
+    environmentPlacementRef.current = {
+      ...initialEnvironmentPlacement,
+    };
+
+    setEnvironmentPlacement({
+      ...initialEnvironmentPlacement,
+    });
+
+    actionsRef.current?.updateEnvironmentPlacement(
+      initialEnvironmentPlacement,
+    );
+  }
+
   function removeEnvironment() {
-    if (environmentUrlRef.current) {
-      URL.revokeObjectURL(environmentUrlRef.current);
+    environmentLoadRequestRef.current += 1;
+
+    if (
+      environmentPendingUrlRef.current
+    ) {
+      URL.revokeObjectURL(
+        environmentPendingUrlRef.current,
+      );
     }
 
+    if (environmentUrlRef.current) {
+      URL.revokeObjectURL(
+        environmentUrlRef.current,
+      );
+    }
+
+    environmentPendingUrlRef.current =
+      null;
+
     environmentUrlRef.current = null;
+
+    environmentPlacementRef.current = {
+      ...initialEnvironmentPlacement,
+    };
+
     setEnvironmentUrl(null);
     setEnvironmentStatus("idle");
     setEnvironmentError(null);
 
+    setEnvironmentPlacement({
+      ...initialEnvironmentPlacement,
+    });
+
+    setExportMessage("");
+
     actionsRef.current?.setEnvironmentEnabled(
       false,
     );
+
+    actionsRef.current?.updateEnvironmentPlacement(
+      initialEnvironmentPlacement,
+    );
+
+    if (environmentInputRef.current) {
+      environmentInputRef.current.value =
+        "";
+    }
   }
 
   function choosePart(
@@ -1496,8 +2167,11 @@ export default function AletteConfigurator() {
     setSelectedPart(partId);
 
     if (moveFocus) {
-      window.requestAnimationFrame(() =>
-        partButtons.current[partId]?.focus(),
+      window.requestAnimationFrame(
+        () =>
+          partButtons.current[
+            partId
+          ]?.focus(),
       );
     }
   }
@@ -1506,18 +2180,22 @@ export default function AletteConfigurator() {
     event: KeyboardEvent<HTMLButtonElement>,
     partId: AtelierPartId,
   ) {
-    const ids = selectedProduct.parts.map(
-      (part) => part.id,
-    );
+    const ids =
+      selectedProduct.parts.map(
+        (part) => part.id,
+      );
 
     const index = ids.indexOf(partId);
-    let nextIndex: number | null = null;
+
+    let nextIndex: number | null =
+      null;
 
     if (
       event.key === "ArrowRight" ||
       event.key === "ArrowDown"
     ) {
-      nextIndex = (index + 1) % ids.length;
+      nextIndex =
+        (index + 1) % ids.length;
     }
 
     if (
@@ -1525,10 +2203,14 @@ export default function AletteConfigurator() {
       event.key === "ArrowUp"
     ) {
       nextIndex =
-        (index - 1 + ids.length) % ids.length;
+        (index - 1 + ids.length) %
+        ids.length;
     }
 
-    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "Home") {
+      nextIndex = 0;
+    }
+
     if (event.key === "End") {
       nextIndex = ids.length - 1;
     }
@@ -1536,7 +2218,11 @@ export default function AletteConfigurator() {
     if (nextIndex === null) return;
 
     event.preventDefault();
-    choosePart(ids[nextIndex], true);
+
+    choosePart(
+      ids[nextIndex],
+      true,
+    );
   }
 
   function chooseMaterial(
@@ -1556,6 +2242,7 @@ export default function AletteConfigurator() {
     };
 
     materialsRef.current = next;
+
     setPartMaterials(next);
 
     void actionsRef.current?.applyMaterial(
@@ -1568,16 +2255,21 @@ export default function AletteConfigurator() {
     if (!canApplyEverywhere) return;
 
     const next = Object.fromEntries(
-      selectedProduct.parts.map((part) => [
-        part.id,
-        selectedMaterial.id,
-      ]),
+      selectedProduct.parts.map(
+        (part) => [
+          part.id,
+          selectedMaterial.id,
+        ],
+      ),
     ) as PartMaterials;
 
     materialsRef.current = next;
     setPartMaterials(next);
 
-    for (const part of selectedProduct.parts) {
+    for (
+      const part of
+      selectedProduct.parts
+    ) {
       void actionsRef.current?.applyMaterial(
         part.id,
         selectedMaterial.id,
@@ -1585,19 +2277,70 @@ export default function AletteConfigurator() {
     }
   }
 
+  function toggleExploded() {
+    if (status !== "ready") return;
+
+    const next = !exploded;
+
+    setExploded(next);
+
+    actionsRef.current?.setExploded(
+      next,
+    );
+  }
+
+  function toggleAutoRotate() {
+    if (status !== "ready") return;
+
+    if (
+      window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches
+    ) {
+      setAutoRotate(false);
+
+      actionsRef.current?.setAutoRotate(
+        false,
+      );
+
+      return;
+    }
+
+    const next = !autoRotate;
+
+    setAutoRotate(next);
+
+    actionsRef.current?.setAutoRotate(
+      next,
+    );
+  }
+
+  function chooseView(view: ViewName) {
+    if (status !== "ready") return;
+
+    setActiveView(view);
+
+    actionsRef.current?.setView(view);
+  }
+
   function resetView() {
     setExploded(false);
     setAutoRotate(false);
+
     setActiveView("perspective");
 
-    actionsRef.current?.setExploded(false);
-    actionsRef.current?.setAutoRotate(false);
-    actionsRef.current?.setView("perspective");
-  }
+    actionsRef.current?.setExploded(
+      false,
+    );
 
-  const visibleProducts = Object.entries(
-    atelierProducts,
-  ) as [AtelierProductId, AtelierProduct][];
+    actionsRef.current?.setAutoRotate(
+      false,
+    );
+
+    actionsRef.current?.setView(
+      "perspective",
+    );
+  }
 
   return (
     <section
@@ -1607,9 +2350,13 @@ export default function AletteConfigurator() {
       <div className="viewer-panel">
         <div className="viewer-meta">
           <span>
-            Modello Rev. {selectedProduct.revision}
+            Modello Rev.{" "}
+            {selectedProduct.revision}
           </span>
-          <span>{selectedProduct.dimensions}</span>
+
+          <span>
+            {selectedProduct.dimensions}
+          </span>
         </div>
 
         <div
@@ -1674,11 +2421,20 @@ export default function AletteConfigurator() {
           )}
         </div>
 
-        <div className="viewer-toolbar">
-          <div className="view-buttons">
+        <div
+          className="viewer-toolbar"
+          aria-label="Controlli del modello tridimensionale"
+        >
+          <div
+            className="view-buttons"
+            aria-label="Viste"
+          >
             {(
               [
-                ["perspective", "Prospettiva"],
+                [
+                  "perspective",
+                  "Prospettiva",
+                ],
                 ["front", "Frontale"],
                 ["side", "Laterale"],
                 ["top", "Alto"],
@@ -1692,11 +2448,15 @@ export default function AletteConfigurator() {
                     ? "is-active"
                     : ""
                 }
-                disabled={status !== "ready"}
-                onClick={() => {
-                  setActiveView(id);
-                  actionsRef.current?.setView(id);
-                }}
+                aria-pressed={
+                  activeView === id
+                }
+                disabled={
+                  status !== "ready"
+                }
+                onClick={() =>
+                  chooseView(id)
+                }
               >
                 {label}
               </button>
@@ -1706,29 +2466,22 @@ export default function AletteConfigurator() {
           <div className="viewer-actions">
             <button
               type="button"
-              disabled={status !== "ready"}
-              onClick={() => {
-                const next = !exploded;
-                setExploded(next);
-                actionsRef.current?.setExploded(
-                  next,
-                );
-              }}
+              aria-pressed={exploded}
+              disabled={
+                status !== "ready"
+              }
+              onClick={toggleExploded}
             >
               Esploso
             </button>
 
             <button
               type="button"
-              disabled={status !== "ready"}
-              onClick={() => {
-                const next = !autoRotate;
-                setAutoRotate(next);
-
-                actionsRef.current?.setAutoRotate(
-                  next,
-                );
-              }}
+              aria-pressed={autoRotate}
+              disabled={
+                status !== "ready"
+              }
+              onClick={toggleAutoRotate}
             >
               Rotazione
             </button>
@@ -1738,20 +2491,33 @@ export default function AletteConfigurator() {
               type="file"
               accept="image/jpeg,image/png,image/webp"
               hidden
-              onChange={handleEnvironmentFile}
+              onChange={
+                handleEnvironmentFile
+              }
             />
 
             <button
               type="button"
-              disabled={status !== "ready"}
-              onClick={openEnvironmentPicker}
+              aria-pressed={Boolean(
+                environmentUrl,
+              )}
+              disabled={
+                status !== "ready" ||
+                environmentStatus ===
+                  "loading"
+              }
+              onClick={
+                openEnvironmentPicker
+              }
             >
               Ambiente
             </button>
 
             <button
               type="button"
-              disabled={status !== "ready"}
+              disabled={
+                status !== "ready"
+              }
               onClick={resetView}
             >
               Reimposta vista
@@ -1759,7 +2525,11 @@ export default function AletteConfigurator() {
 
             <button
               type="button"
-              disabled={status !== "ready"}
+              disabled={
+                status !== "ready" ||
+                environmentStatus ===
+                  "loading"
+              }
               onClick={() =>
                 actionsRef.current?.saveImage()
               }
@@ -1773,7 +2543,7 @@ export default function AletteConfigurator() {
       <aside className="configuration-panel">
         <div className="configuration-heading">
           <p className="eyebrow">
-            02 — Componi il tuo{" "}
+            Componi il tuo{" "}
             {selectedProduct.shortName}
           </p>
 
@@ -1784,54 +2554,225 @@ export default function AletteConfigurator() {
           </h2>
 
           <p>
-            Seleziona il tavolo, una parte e la
-            pietra desiderata.
+            Seleziona una parte del
+            tavolo, poi scegli la pietra.
+            Puoi anche toccare
+            direttamente il modello.
           </p>
         </div>
+
+        {(
+          environmentUrl ||
+          environmentStatus ===
+            "loading" ||
+          environmentError
+        ) && (
+          <div
+            className="control-section environment-controls"
+            aria-labelledby="environment-controls-title"
+          >
+            <div className="control-title">
+              <span>A</span>
+
+              <strong id="environment-controls-title">
+                Ambiente reale
+              </strong>
+            </div>
+
+            {environmentStatus ===
+              "loading" && (
+              <p
+                className="environment-status"
+                role="status"
+              >
+                Preparo la fotografia
+                dell’ambiente…
+              </p>
+            )}
+
+            {environmentError && (
+              <p
+                className="environment-error"
+                role="alert"
+              >
+                {environmentError}
+              </p>
+            )}
+
+            {environmentUrl && (
+              <>
+                <p className="environment-ready">
+                  Foto pronta. Regola il
+                  tavolo per inserirlo
+                  visivamente nello spazio.
+                </p>
+
+                <label>
+                  <span>
+                    Dimensione tavolo
+                  </span>
+
+                  <output>
+                    {Math.round(
+                      environmentPlacement.scale *
+                        100,
+                    )}
+                    %
+                  </output>
+
+                  <input
+                    type="range"
+                    min="0.65"
+                    max="1.45"
+                    step="0.01"
+                    value={
+                      environmentPlacement.scale
+                    }
+                    onChange={(event) =>
+                      changeEnvironmentPlacement(
+                        "scale",
+                        Number(
+                          event.target.value,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>
+                    Posizione orizzontale
+                  </span>
+
+                  <output>
+                    {
+                      environmentPlacement.x
+                    }
+                  </output>
+
+                  <input
+                    type="range"
+                    min="-30"
+                    max="30"
+                    step="1"
+                    value={
+                      environmentPlacement.x
+                    }
+                    onChange={(event) =>
+                      changeEnvironmentPlacement(
+                        "x",
+                        Number(
+                          event.target.value,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>
+                    Posizione verticale
+                  </span>
+
+                  <output>
+                    {
+                      environmentPlacement.y
+                    }
+                  </output>
+
+                  <input
+                    type="range"
+                    min="-25"
+                    max="25"
+                    step="1"
+                    value={
+                      environmentPlacement.y
+                    }
+                    onChange={(event) =>
+                      changeEnvironmentPlacement(
+                        "y",
+                        Number(
+                          event.target.value,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>
+                    Intensità ombra
+                  </span>
+
+                  <output>
+                    {Math.round(
+                      environmentPlacement.shadow *
+                        100,
+                    )}
+                    %
+                  </output>
+
+                  <input
+                    type="range"
+                    min="0"
+                    max="0.45"
+                    step="0.01"
+                    value={
+                      environmentPlacement.shadow
+                    }
+                    onChange={(event) =>
+                      changeEnvironmentPlacement(
+                        "shadow",
+                        Number(
+                          event.target.value,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+
+                <div className="environment-actions">
+                  <button
+                    type="button"
+                    onClick={
+                      resetEnvironmentPlacement
+                    }
+                  >
+                    Centra il tavolo
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={
+                      openEnvironmentPicker
+                    }
+                  >
+                    Sostituisci foto
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={
+                      removeEnvironment
+                    }
+                  >
+                    Rimuovi foto
+                  </button>
+                </div>
+
+                <p className="environment-note">
+                  La foto resta sul tuo
+                  dispositivo e non viene
+                  caricata né conservata.
+                </p>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="control-section">
           <div className="control-title">
             <span>01</span>
-            <strong>Modello</strong>
-          </div>
-
-          <div
-            className="part-tabs"
-            role="radiogroup"
-            aria-label="Modello da configurare"
-          >
-            {visibleProducts.map(
-              ([productId, product]) => (
-                <button
-                  key={productId}
-                  type="button"
-                  role="radio"
-                  aria-checked={
-                    selectedProductId === productId
-                  }
-                  className={
-                    selectedProductId === productId
-                      ? "is-active"
-                      : ""
-                  }
-                  disabled={status === "loading"}
-                  onClick={() =>
-                    chooseProduct(productId)
-                  }
-                >
-                  <span>{product.shortName}</span>
-                  <small>
-                    {product.collection}
-                  </small>
-                </button>
-              ),
-            )}
-          </div>
-        </div>
-
-        <div className="control-section">
-          <div className="control-title">
-            <span>02</span>
             <strong>Componente</strong>
           </div>
 
@@ -1839,52 +2780,71 @@ export default function AletteConfigurator() {
             className="part-tabs"
             role="radiogroup"
             aria-label="Componente da configurare"
+            style={{
+              gridTemplateColumns: `repeat(${selectedProduct.parts.length}, minmax(0, 1fr))`,
+            }}
           >
-            {selectedProduct.parts.map((part) => (
-              <button
-                key={part.id}
-                ref={(element) => {
-                  partButtons.current[part.id] =
-                    element;
-                }}
-                type="button"
-                role="radio"
-                aria-checked={
-                  selectedPart === part.id
-                }
-                tabIndex={
-                  selectedPart === part.id ? 0 : -1
-                }
-                className={
-                  selectedPart === part.id
-                    ? "is-active"
-                    : ""
-                }
-                onKeyDown={(event) =>
-                  handlePartKeys(event, part.id)
-                }
-                onClick={() =>
-                  choosePart(part.id)
-                }
-              >
-                <span>{part.shortLabel}</span>
-                <small>
-                  {part.role === "plane"
-                    ? "Piano"
-                    : "Gamba"}
-                </small>
-              </button>
-            ))}
+            {selectedProduct.parts.map(
+              (part) => (
+                <button
+                  key={part.id}
+                  ref={(element) => {
+                    partButtons.current[
+                      part.id
+                    ] = element;
+                  }}
+                  type="button"
+                  role="radio"
+                  aria-checked={
+                    selectedPart ===
+                    part.id
+                  }
+                  tabIndex={
+                    selectedPart ===
+                    part.id
+                      ? 0
+                      : -1
+                  }
+                  className={
+                    selectedPart ===
+                    part.id
+                      ? "is-active"
+                      : ""
+                  }
+                  onKeyDown={(event) =>
+                    handlePartKeys(
+                      event,
+                      part.id,
+                    )
+                  }
+                  onClick={() =>
+                    choosePart(part.id)
+                  }
+                >
+                  <span>
+                    {part.shortLabel}
+                  </span>
+
+                  <small>
+                    {part.role === "plane"
+                      ? "Piano"
+                      : "Gamba"}
+                  </small>
+                </button>
+              ),
+            )}
           </div>
 
           <p className="part-specification">
-            {selectedPartDefinition.specification}
+            {
+              selectedPartDefinition.specification
+            }
           </p>
         </div>
 
         <div className="control-section materials-section">
           <div className="control-title">
-            <span>03</span>
+            <span>02</span>
             <strong>Pietra</strong>
           </div>
 
@@ -1898,55 +2858,77 @@ export default function AletteConfigurator() {
 
             <div>
               <small>
-                {selectedPartDefinition.label}
+                {
+                  selectedPartDefinition.label
+                }
               </small>
+
               <strong>
                 {selectedMaterial.name}
               </strong>
             </div>
           </div>
 
-          <div className="material-grid">
-            {stoneMaterials.map((material) => {
-              const allowed =
-                material.allowedOn.includes(
-                  selectedPartDefinition.role,
+          <div
+            className="material-grid"
+            aria-label={`Pietre per ${selectedPartDefinition.label}`}
+          >
+            {stoneMaterials.map(
+              (material) => {
+                const allowed =
+                  material.allowedOn.includes(
+                    selectedPartDefinition.role,
+                  );
+
+                const active =
+                  selectedMaterial.id ===
+                  material.id;
+
+                return (
+                  <button
+                    key={material.id}
+                    type="button"
+                    className={
+                      active
+                        ? "is-active"
+                        : ""
+                    }
+                    disabled={!allowed}
+                    aria-pressed={active}
+                    title={
+                      allowed
+                        ? material.name
+                        : `${material.name}: disponibile solo per i piani`
+                    }
+                    onClick={() =>
+                      chooseMaterial(
+                        material,
+                      )
+                    }
+                  >
+                    <span className="material-thumb">
+                      <img
+                        src={
+                          material.texture
+                        }
+                        alt=""
+                        loading="lazy"
+                      />
+                    </span>
+
+                    <span className="material-name">
+                      {material.name}
+                    </span>
+
+                    {!allowed && (
+                      <small>
+                        Solo piani
+                      </small>
+                    )}
+                  </button>
                 );
-
-              const active =
-                selectedMaterial.id === material.id;
-
-              return (
-                <button
-                  key={material.id}
-                  type="button"
-                  className={
-                    active ? "is-active" : ""
-                  }
-                  disabled={!allowed}
-                  aria-pressed={active}
-                  onClick={() =>
-                    chooseMaterial(material)
-                  }
-                >
-                  <span className="material-thumb">
-                    <img
-                      src={material.texture}
-                      alt=""
-                      loading="lazy"
-                    />
-                  </span>
-
-                  <span className="material-name">
-                    {material.name}
-                  </span>
-
-                  {!allowed && (
-                    <small>Solo piani</small>
-                  )}
-                </button>
-              );
-            })}
+              },
+            )}
           </div>
 
           <button
@@ -1960,20 +2942,30 @@ export default function AletteConfigurator() {
                 ? "Applica a tutti gli elementi"
                 : "Disponibile solo per i piani"}
             </span>
-            <span aria-hidden="true">→</span>
+
+            <span aria-hidden="true">
+              →
+            </span>
           </button>
         </div>
 
         <div className="control-section rendering-controls">
           <div className="control-title">
-            <span>04</span>
-            <strong>Resa indicativa</strong>
+            <span>03</span>
+
+            <strong>
+              Resa indicativa
+            </strong>
           </div>
 
           <label>
             <span>Scala venatura</span>
+
             <output>
-              {Math.round(textureScale * 100)}%
+              {Math.round(
+                textureScale * 100,
+              )}
+              %
             </output>
 
             <input
@@ -1987,7 +2979,9 @@ export default function AletteConfigurator() {
                   event.target.value,
                 );
 
-                textureScaleRef.current = value;
+                textureScaleRef.current =
+                  value;
+
                 setTextureScale(value);
 
                 actionsRef.current?.updateTextureScale(
@@ -1999,8 +2993,10 @@ export default function AletteConfigurator() {
 
           <label>
             <span>Luce ambiente</span>
+
             <output>
-              {Math.round(exposure * 100)}%
+              {Math.round(exposure * 100)}
+              %
             </output>
 
             <input
@@ -2014,6 +3010,9 @@ export default function AletteConfigurator() {
                   event.target.value,
                 );
 
+                exposureRef.current =
+                  value;
+
                 setExposure(value);
 
                 actionsRef.current?.setExposure(
@@ -2022,58 +3021,15 @@ export default function AletteConfigurator() {
               }}
             />
           </label>
+
+          <p>
+            Ogni lastra naturale è
+            unica. Venature, tono e
+            disposizione reale saranno
+            verificati sulla lastra
+            selezionata.
+          </p>
         </div>
-
-        {environmentUrl && (
-          <div className="control-section environment-controls">
-            <div className="control-title">
-              <span>05</span>
-              <strong>Ambiente reale</strong>
-            </div>
-
-            {(
-              [
-                ["scale", "Dimensione tavolo", 0.65, 1.45, 0.01],
-                ["x", "Posizione orizzontale", -30, 30, 1],
-                ["y", "Posizione verticale", -25, 25, 1],
-                ["shadow", "Intensità ombra", 0, 0.45, 0.01],
-              ] as const
-            ).map(
-              ([property, label, min, max, step]) => (
-                <label key={property}>
-                  <span>{label}</span>
-
-                  <input
-                    type="range"
-                    min={min}
-                    max={max}
-                    step={step}
-                    value={
-                      environmentPlacement[property]
-                    }
-                    onChange={(event) =>
-                      changeEnvironmentPlacement(
-                        property,
-                        Number(event.target.value),
-                      )
-                    }
-                  />
-                </label>
-              ),
-            )}
-
-            <button
-              type="button"
-              onClick={removeEnvironment}
-            >
-              Rimuovi foto
-            </button>
-          </div>
-        )}
-
-        {environmentError && (
-          <p role="alert">{environmentError}</p>
-        )}
       </aside>
     </section>
   );
