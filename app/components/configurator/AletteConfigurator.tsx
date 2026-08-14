@@ -196,7 +196,7 @@ const selectedProduct = atelierProducts[selectedProductId];
     if (environmentUrlRef.current) URL.revokeObjectURL(environmentUrlRef.current);
     environmentPendingUrlRef.current = null;
     environmentUrlRef.current = null;
-  }, []);
+  }, [selectedProduct]);
 
   useEffect(() => {
     const container = viewerRef.current;
