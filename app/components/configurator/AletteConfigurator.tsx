@@ -242,9 +242,9 @@ const selectedProduct = atelierProducts[selectedProductId];
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.setAttribute("role", "img");
     renderer.domElement.setAttribute(
-      "aria-label",
-      "Modello tridimensionale interattivo di Alette Coffee Table. Usa i pulsanti delle viste per orientarlo.",
-    );
+  "aria-label",
+  `Modello tridimensionale interattivo di ${selectedProduct.name}. Usa i pulsanti delle viste per orientarlo.`,
+);
     viewerContainer.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -567,9 +567,10 @@ const selectedProduct = atelierProducts[selectedProductId];
         downloadUrls.add(downloadUrl);
         const link = document.createElement("a");
         link.href = downloadUrl;
+        const productSlug = selectedProduct.id.replace(/[^a-z0-9-]/gi, "-");
         link.download = environmentEnabled
-          ? `riviera-design-alette-ambiente-${Date.now()}.png`
-          : `riviera-design-alette-${Date.now()}.png`;
+  ? `riviera-design-${productSlug}-ambiente-${Date.now()}.png`
+  : `riviera-design-${productSlug}-${Date.now()}.png`;
         document.body.appendChild(link);
         link.click();
         link.remove();
@@ -954,7 +955,7 @@ function chooseProduct(productId: AtelierProductId) {
               <p>
                 {status === "error"
                   ? "Ricarica la pagina. Se il problema continua, verifica che l’Atelier sia stato aperto dal collegamento dedicato."
-                  : "Caricamento della geometria Alette Coffee…"}
+                  : `Caricamento della geometria ${selectedProduct.name}…`}
               </p>
             </div>
           )}
