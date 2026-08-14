@@ -102,10 +102,7 @@ export default function Home() {
             Esplora GF Collection e Alette Collection. Scegli il modello e costruisci una composizione personale
             attraverso pietre, proporzioni e dettagli.
           </p>
-          <button className="primary-cta" onClick={() => collection.current?.scrollIntoView({ behavior: "smooth" })}>
-            <span>Entra nell’Atelier</span><span aria-hidden="true">↘</span>
-          </button>
-        </div>
+          </div>
 
         <div className="hero-visual" role="img" aria-label="GF Coffee Table ambientato in un interno contemporaneo">
           <div className="image-wash" />
