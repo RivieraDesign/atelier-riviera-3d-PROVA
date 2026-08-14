@@ -314,6 +314,10 @@ export const atelierProducts = {
     parts: rivieraParts,
   },
 
+  /**
+   * Correzione dell’associazione:
+   * il file dining_table_riviera.glb contiene il modello Side.
+   */
   "riviera-side": {
     id: "riviera-side",
     collection: "GF Collection",
@@ -322,12 +326,16 @@ export const atelierProducts = {
     code: "RD-GF-SIDE",
     revision: "01",
     model:
-      "/atelier/models/side_table_riviera.glb",
+      "/atelier/models/dining_table_riviera.glb",
     dimensions: "Ø 55 × H 52 cm",
     nominalMass: "Su richiesta",
     parts: rivieraParts,
   },
 
+  /**
+   * Correzione dell’associazione:
+   * il file side_table_riviera.glb contiene il modello Dining.
+   */
   "riviera-dining": {
     id: "riviera-dining",
     collection: "GF Collection",
@@ -336,7 +344,7 @@ export const atelierProducts = {
     code: "RD-GF-DINING",
     revision: "01",
     model:
-      "/atelier/models/dining_table_riviera.glb",
+      "/atelier/models/side_table_riviera.glb",
     dimensions: "Ø 122,5 × H 79 cm",
     nominalMass: "Su richiesta",
     parts: rivieraParts,
@@ -370,7 +378,8 @@ export function isAtelierProductId(
 }
 
 /**
- * Restituisce un prodotto valido oppure Alette come fallback.
+ * Restituisce il prodotto richiesto oppure Alette
+ * Coffee Table come fallback.
  */
 export function getAtelierProduct(
   value: string | null | undefined,
