@@ -1,19 +1,5 @@
 export type PartRole = "plane" | "leg";
 
-/**
- * Identificativi utilizzabili dall'intero Atelier.
- *
- * Alette usa:
- * - top
- * - leg-a
- * - leg-b
- *
- * I modelli GF usano:
- * - top
- * - subtop
- * - leg-a
- * - leg-b
- */
 export type AtelierPartId =
   | "top"
   | "subtop"
@@ -23,11 +9,14 @@ export type AtelierPartId =
 /**
  * Alias mantenuto per compatibilità con eventuali componenti
  * che importano ancora AlettePartId.
- *
- * Include anche subtop perché il configuratore condiviso deve
- * poter gestire sia Alette sia i modelli GF.
  */
 export type AlettePartId = AtelierPartId;
+
+export type AtelierProductId =
+  | "alette-coffee"
+  | "riviera-coffee"
+  | "riviera-side"
+  | "riviera-dining";
 
 export type ProductPart = {
   id: AtelierPartId;
@@ -36,7 +25,11 @@ export type ProductPart = {
   shortLabel: string;
   role: PartRole;
   specification: string;
-  explodeOffset: readonly [number, number, number];
+  explodeOffset: readonly [
+    number,
+    number,
+    number,
+  ];
 };
 
 export type AtelierProduct = {
@@ -51,12 +44,6 @@ export type AtelierProduct = {
   nominalMass: string;
   parts: readonly ProductPart[];
 };
-
-export type AtelierProductId =
-  | "alette-coffee"
-  | "riviera-coffee"
-  | "riviera-side"
-  | "riviera-dining";
 
 export type StoneMaterial = {
   id: string;
@@ -79,121 +66,136 @@ export const stoneMaterials: readonly StoneMaterial[] = [
   {
     id: "bianco-carrara",
     name: "Bianco Carrara",
-    texture: "/atelier/materials/bianco-carrara.webp",
+    texture:
+      "/atelier/materials/bianco-carrara.webp",
     roughness: 0.42,
     allowedOn: everyPart,
   },
   {
     id: "statuario-vagli",
     name: "Statuario Vagli",
-    texture: "/atelier/materials/statuario-vagli.jpg",
+    texture:
+      "/atelier/materials/statuario-vagli.jpg",
     roughness: 0.38,
     allowedOn: everyPart,
   },
   {
     id: "arabescato-corchia",
     name: "Arabescato Corchia",
-    texture: "/atelier/materials/arabescato-corchia.jpg",
+    texture:
+      "/atelier/materials/arabescato-corchia.jpg",
     roughness: 0.4,
     allowedOn: everyPart,
   },
   {
     id: "arabescato-vagli",
     name: "Arabescato Vagli",
-    texture: "/atelier/materials/arabescato-vagli.jpg",
+    texture:
+      "/atelier/materials/arabescato-vagli.jpg",
     roughness: 0.4,
     allowedOn: everyPart,
   },
   {
     id: "calacatta-oro",
     name: "Calacatta Oro",
-    texture: "/atelier/materials/calacatta-oro.jpg",
+    texture:
+      "/atelier/materials/calacatta-oro.jpg",
     roughness: 0.38,
     allowedOn: everyPart,
   },
   {
     id: "calacatta-viola",
     name: "Calacatta Viola",
-    texture: "/atelier/materials/calacatta-viola.webp",
+    texture:
+      "/atelier/materials/calacatta-viola.webp",
     roughness: 0.38,
     allowedOn: everyPart,
   },
   {
     id: "travertino",
     name: "Travertino",
-    texture: "/atelier/materials/travertino.webp",
+    texture:
+      "/atelier/materials/travertino.webp",
     roughness: 0.58,
     allowedOn: everyPart,
   },
   {
     id: "verde-guatemala",
     name: "Verde Guatemala",
-    texture: "/atelier/materials/verde-guatemala.jpg",
+    texture:
+      "/atelier/materials/verde-guatemala.jpg",
     roughness: 0.42,
     allowedOn: everyPart,
   },
   {
     id: "nero-marquina",
     name: "Nero Marquina",
-    texture: "/atelier/materials/nero-marquina.jpg",
+    texture:
+      "/atelier/materials/nero-marquina.jpg",
     roughness: 0.36,
     allowedOn: everyPart,
   },
   {
     id: "port-laurent",
     name: "Port Laurent",
-    texture: "/atelier/materials/port-laurent.jpg",
+    texture:
+      "/atelier/materials/port-laurent.jpg",
     roughness: 0.37,
     allowedOn: everyPart,
   },
   {
     id: "ardesia-ligure",
     name: "Ardesia Ligure",
-    texture: "/atelier/materials/ardesia-ligure.webp",
+    texture:
+      "/atelier/materials/ardesia-ligure.webp",
     roughness: 0.72,
     allowedOn: everyPart,
   },
   {
     id: "azul-macauba",
     name: "Azul Macauba",
-    texture: "/atelier/materials/azul-macauba.jpg",
+    texture:
+      "/atelier/materials/azul-macauba.jpg",
     roughness: 0.42,
     allowedOn: planesOnly,
   },
   {
     id: "bardiglio",
     name: "Bardiglio",
-    texture: "/atelier/materials/bardiglio.jpg",
+    texture:
+      "/atelier/materials/bardiglio.jpg",
     roughness: 0.45,
     allowedOn: planesOnly,
   },
   {
     id: "daino-reale",
     name: "Daino Reale",
-    texture: "/atelier/materials/daino-reale.jpg",
+    texture:
+      "/atelier/materials/daino-reale.jpg",
     roughness: 0.44,
     allowedOn: planesOnly,
   },
   {
     id: "emperador-dark",
     name: "Emperador Dark",
-    texture: "/atelier/materials/emperador-dark.jpg",
+    texture:
+      "/atelier/materials/emperador-dark.jpg",
     roughness: 0.38,
     allowedOn: planesOnly,
   },
   {
     id: "grigio-perla",
     name: "Grigio Perla",
-    texture: "/atelier/materials/grigio-perla.jpg",
+    texture:
+      "/atelier/materials/grigio-perla.jpg",
     roughness: 0.46,
     allowedOn: everyPart,
   },
 ] as const;
 
 /**
- * Componenti originali di Alette Coffee Table.
+ * Alette Coffee mantiene tre componenti:
  *
- * Il modello Alette mantiene tre componenti:
  * - Piana
  * - Gamba_A
  * - Gamba_B
@@ -232,10 +234,9 @@ export const aletteParts = [
 ] as const satisfies readonly ProductPart[];
 
 /**
- * Componenti condivisi dai tre tavoli GF.
+ * GF Coffee, GF Side e GF Dining utilizzano
+ * quattro componenti:
  *
- * I nomi delle mesh devono corrispondere esattamente
- * a quelli contenuti nei file GLB:
  * - Piana
  * - Sottopiana
  * - Gamba_lato_A
@@ -292,7 +293,8 @@ export const atelierProducts = {
     shortName: "Alette",
     code: "RD-ALT-CT-1000",
     revision: "B",
-    model: "/atelier/models/alette-coffee-rev-b.glb",
+    model:
+      "/atelier/models/alette-coffee-rev-b.glb",
     dimensions: "Ø 1000 × H 350 mm",
     nominalMass: "77,8 kg",
     parts: aletteParts,
@@ -305,7 +307,8 @@ export const atelierProducts = {
     shortName: "Coffee",
     code: "RD-GF-COFFEE",
     revision: "01",
-    model: "/atelier/models/coffee_table_riviera.glb",
+    model:
+      "/atelier/models/coffee_table_riviera.glb",
     dimensions: "Ø 80,5 × H 35 cm",
     nominalMass: "Su richiesta",
     parts: rivieraParts,
@@ -318,7 +321,8 @@ export const atelierProducts = {
     shortName: "Side",
     code: "RD-GF-SIDE",
     revision: "01",
-    model: "/atelier/models/side_table_riviera.glb",
+    model:
+      "/atelier/models/side_table_riviera.glb",
     dimensions: "Ø 55 × H 52 cm",
     nominalMass: "Su richiesta",
     parts: rivieraParts,
@@ -331,7 +335,8 @@ export const atelierProducts = {
     shortName: "Dining",
     code: "RD-GF-DINING",
     revision: "01",
-    model: "/atelier/models/dining_table_riviera.glb",
+    model:
+      "/atelier/models/dining_table_riviera.glb",
     dimensions: "Ø 122,5 × H 79 cm",
     nominalMass: "Su richiesta",
     parts: rivieraParts,
@@ -342,8 +347,37 @@ export const atelierProducts = {
 >;
 
 /**
- * Esportazione mantenuta per compatibilità con eventuali
- * pagine o componenti che importano ancora aletteCoffee.
+ * Esportazione mantenuta per compatibilità con il codice
+ * precedente che importa direttamente aletteCoffee.
  */
 export const aletteCoffee =
   atelierProducts["alette-coffee"];
+
+/**
+ * Controlla se un valore ricevuto dall’URL rappresenta
+ * effettivamente uno dei prodotti disponibili.
+ */
+export function isAtelierProductId(
+  value: string | null | undefined,
+): value is AtelierProductId {
+  return Boolean(
+    value &&
+      Object.prototype.hasOwnProperty.call(
+        atelierProducts,
+        value,
+      ),
+  );
+}
+
+/**
+ * Restituisce un prodotto valido oppure Alette come fallback.
+ */
+export function getAtelierProduct(
+  value: string | null | undefined,
+): AtelierProduct {
+  if (isAtelierProductId(value)) {
+    return atelierProducts[value];
+  }
+
+  return atelierProducts["alette-coffee"];
+}
