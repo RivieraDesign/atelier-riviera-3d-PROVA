@@ -710,6 +710,25 @@ const selectedProduct = atelierProducts[selectedProductId];
     };
   }, []);
 
+function chooseProduct(productId: AtelierProductId) {
+  if (productId === selectedProductId) return;
+
+  materialsRef.current = initialMaterials;
+  textureScaleRef.current = 1;
+
+  setStatus("loading");
+  setSelectedProductId(productId);
+  setSelectedPart("top");
+  setPartMaterials(initialMaterials);
+  setTextureScale(1);
+  setExploded(false);
+  setAutoRotate(false);
+  setActiveView("perspective");
+  setExportMessage("");
+
+  actionsRef.current?.setAutoRotate(false);
+}
+  
   function openEnvironmentPicker() {
     if (status !== "ready" || environmentStatus === "loading") return;
     setEnvironmentError(null);
