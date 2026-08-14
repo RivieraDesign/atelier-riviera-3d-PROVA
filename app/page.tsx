@@ -48,7 +48,6 @@ type ModelId = (typeof models)[number]["id"];
 
 export default function Home() {
   const [selected, setSelected] = useState<ModelId>("dining");
-  const collection = useRef<HTMLElement>(null);
   const modelButtons = useRef<Partial<Record<ModelId, HTMLButtonElement | null>>>({});
 
   useEffect(() => {
@@ -79,8 +78,6 @@ export default function Home() {
     chooseModel(ids[nextIndex], true);
   }
 
-  const current = models.find((model) => model.id === selected) ?? models[0];
-
   return (
     <main>
       <section className="hero" aria-labelledby="atelier-title">
@@ -91,7 +88,6 @@ export default function Home() {
             </span>
             <span>Riviera Design</span>
           </a>
-          <span className="private-badge">Anteprima riservata</span>
         </header>
 
         <div className="hero-copy">
@@ -108,7 +104,6 @@ export default function Home() {
           <div className="image-wash" />
           <div className="stone-orbit stone-orbit-one" />
           <div className="stone-orbit stone-orbit-two" />
-          <span className="visual-caption">GF Collection · Preview 01</span>
         </div>
 
         <p className="hero-note">
@@ -117,16 +112,16 @@ export default function Home() {
         </p>
       </section>
 
-      <section 
+      <section className="collection" aria-label="Scegli il modello">
 
-        <div className="collection-selector" role="radiogroup" aria-labelledby="models-title">
+        <div className="collection-selector" role="radiogroup" aria-label="Modelli disponibili">
           <div className="collection-family">
             <div className="family-heading">
-              <div><span>GF</span><h3>GF Collection</h3></div>
+              <div><h3>GF Collection</h3></div>
               <p>Quattro elementi · doppia piana · tre proporzioni</p>
             </div>
             <div className="model-grid model-grid--gf">
-              {gfModels.map((model, index) => {
+              {gfModels.map((model) => {
                 const active = selected === model.id;
                 return (
                   <button
@@ -139,7 +134,6 @@ export default function Home() {
                     onKeyDown={(event) => handleModelKeys(event, model.id)}
                     onClick={() => chooseModel(model.id)}
                   >
-                    <span className="card-index">0{index + 1}</span>
                     <span className="card-image"><img src={model.image} alt="" /></span>
                     <span className="card-copy">
                       <small>{model.kicker}</small>
@@ -155,7 +149,7 @@ export default function Home() {
 
           <div className="collection-family collection-family--alette">
             <div className="family-heading family-heading--alette">
-              <div><span>A</span><h3>Alette Collection</h3></div>
+              <div><h3>Alette Collection</h3></div>
               <p>Tre elementi · una sola piana · nuova geometria</p>
             </div>
             <div className="model-grid model-grid--alette">
@@ -166,13 +160,12 @@ export default function Home() {
                 aria-checked={selected === aletteModel.id}
                 tabIndex={selected === aletteModel.id ? 0 : -1}
                 onKeyDown={(event) => handleModelKeys(event, aletteModel.id)}
-                onClick={() => chooseModel(aletteModel.id)}
+                onClick={() => { window.location.href = aletteModel.route; }}
               >
                 <span className="alette-card-visual" aria-hidden="true">
                   <img src="/brand/alette-coffee-ambientata-v2.png" alt="" />
                   <small>Rev. B · 12.08.2026</small>
                 </span>
-                <span className="card-index">04</span>
                 <span className="card-copy">
                   <small>{aletteModel.kicker}</small>
                   <strong>{aletteModel.name}</strong>
@@ -185,28 +178,6 @@ export default function Home() {
           </div>
         </div>
 
-        <div className={`next-step ${current.configurable ? "is-ready" : ""}`}>
-          <div>
-            <span>Prossimo passaggio</span>
-            <strong>Materia</strong>
-          </div>
-          {current.configurable ? (
-            <a className="next-step-action" href={current.route}>
-              Configura {current.name.replace(" Table", "")}
-              <span aria-hidden="true">→</span>
-            </a>
-          ) : (
-            <button disabled title="Sarà attivato quando disporremo delle geometrie GF definitive">
-              Continua con {current.name.replace(" Table", "")}
-              <span aria-hidden="true">→</span>
-            </button>
-          )}
-          <p>
-            {current.configurable
-              ? "Geometria Alette Rev. B · configurazione disponibile"
-              : "Geometrie GF in validazione · il percorso si aprirà qui"}
-          </p>
-        </div>
       </section>
 
       <footer>
