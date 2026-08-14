@@ -194,8 +194,9 @@ export const stoneMaterials: readonly StoneMaterial[] = [
 ] as const;
 
 /**
- * Alette Coffee mantiene tre componenti:
+ * Componenti del modello Alette Coffee.
  *
+ * Mesh contenute nel GLB:
  * - Piana
  * - Gamba_A
  * - Gamba_B
@@ -234,9 +235,63 @@ export const aletteParts = [
 ] as const satisfies readonly ProductPart[];
 
 /**
- * GF Coffee, GF Side e GF Dining utilizzano
- * quattro componenti:
+ * Componenti specifici del GF Coffee Table.
  *
+ * I nomi corrispondono esattamente alle mesh mostrate
+ * nel visualizzatore del file coffee_table_riviera.glb:
+ *
+ * - piana
+ * - sottopiana
+ * - gamba_A
+ * - gamba_B
+ */
+export const rivieraCoffeeParts = [
+  {
+    id: "top",
+    meshName: "piana",
+    label: "Piano superiore",
+    shortLabel: "Piano",
+    role: "plane",
+    specification:
+      "Piano superiore in pietra naturale",
+    explodeOffset: [0, 0.48, 0],
+  },
+  {
+    id: "subtop",
+    meshName: "sottopiana",
+    label: "Sottopiano",
+    shortLabel: "Sottopiano",
+    role: "plane",
+    specification:
+      "Sottopiano in pietra naturale",
+    explodeOffset: [0, 0.24, 0],
+  },
+  {
+    id: "leg-a",
+    meshName: "gamba_A",
+    label: "Gamba A",
+    shortLabel: "Gamba A",
+    role: "leg",
+    specification:
+      "Prima gamba strutturale in pietra naturale",
+    explodeOffset: [-0.18, 0, 0],
+  },
+  {
+    id: "leg-b",
+    meshName: "gamba_B",
+    label: "Gamba B",
+    shortLabel: "Gamba B",
+    role: "leg",
+    specification:
+      "Seconda gamba strutturale in pietra naturale",
+    explodeOffset: [0.18, 0, 0],
+  },
+] as const satisfies readonly ProductPart[];
+
+/**
+ * Componenti utilizzati dai modelli GF Side e GF Dining.
+ *
+ * Mesh contenute nei rispettivi GLB:
  * - Piana
  * - Sottopiana
  * - Gamba_lato_A
@@ -300,6 +355,10 @@ export const atelierProducts = {
     parts: aletteParts,
   },
 
+  /**
+   * Il GF Coffee utilizza rivieraCoffeeParts perché
+   * i suoi nomi mesh sono differenti dagli altri GF.
+   */
   "riviera-coffee": {
     id: "riviera-coffee",
     collection: "GF Collection",
@@ -311,12 +370,12 @@ export const atelierProducts = {
       "/atelier/models/coffee_table_riviera.glb",
     dimensions: "Ø 80,5 × H 35 cm",
     nominalMass: "Su richiesta",
-    parts: rivieraParts,
+    parts: rivieraCoffeeParts,
   },
 
   /**
-   * Correzione dell’associazione:
-   * il file dining_table_riviera.glb contiene il modello Side.
+   * Il contenuto del file dining_table_riviera.glb
+   * corrisponde al GF Side Table.
    */
   "riviera-side": {
     id: "riviera-side",
@@ -333,8 +392,8 @@ export const atelierProducts = {
   },
 
   /**
-   * Correzione dell’associazione:
-   * il file side_table_riviera.glb contiene il modello Dining.
+   * Il contenuto del file side_table_riviera.glb
+   * corrisponde al GF Dining Table.
    */
   "riviera-dining": {
     id: "riviera-dining",
@@ -363,7 +422,7 @@ export const aletteCoffee =
 
 /**
  * Controlla se un valore ricevuto dall’URL rappresenta
- * effettivamente uno dei prodotti disponibili.
+ * uno dei prodotti presenti nel catalogo.
  */
 export function isAtelierProductId(
   value: string | null | undefined,
