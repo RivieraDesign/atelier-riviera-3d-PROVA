@@ -21,7 +21,6 @@ export default function AletteCoffeePage() {
           </span>
           <span>Riviera Design</span>
         </a>
-        <span className="private-badge">Anteprima riservata</span>
       </header>
 
       <section className="product-introduction" aria-labelledby="alette-title">

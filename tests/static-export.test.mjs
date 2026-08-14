@@ -19,6 +19,10 @@ test("esporta la home italiana dell’Atelier", async () => {
   assert.match(html, /GF Coffee Table/);
   assert.match(html, /GF Side Table/);
   assert.match(html, /Alette Coffee Table/);
+  assert.doesNotMatch(html, /Anteprima riservata/);
+  assert.doesNotMatch(html, /GF Collection · Preview 01/);
+  assert.doesNotMatch(html, /Prossimo passaggio/);
+  assert.doesNotMatch(html, />Materia</);
   assert.match(html, /noindex/i);
 });
 
@@ -32,6 +36,7 @@ test("esporta la pagina statica del configuratore Alette", async () => {
   assert.match(html, /Gamba 2/);
   assert.match(html, />Ambiente</);
   assert.match(html, /image\/jpeg,image\/png,image\/webp/);
+  assert.doesNotMatch(html, /Anteprima riservata/);
 });
 
 test("include gli asset indispensabili alla configurazione", async () => {
