@@ -14,13 +14,13 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
-  aletteCoffee,
+  atelierProducts,
   stoneMaterials,
   type AlettePartId,
+  type AtelierProductId,
   type ProductPart,
   type StoneMaterial,
 } from "../../data/atelier-catalog";
-
 type ViewName = "perspective" | "front" | "side" | "top";
 type LoadStatus = "loading" | "ready" | "error";
 type PartMaterials = Record<AlettePartId, string>;
@@ -152,7 +152,10 @@ export default function AletteConfigurator() {
   const environmentPendingUrlRef = useRef<string | null>(null);
   const environmentLoadRequestRef = useRef(0);
   const environmentPlacementRef = useRef<EnvironmentPlacement>(initialEnvironmentPlacement);
+const [selectedProductId, setSelectedProductId] =
+  useState<AtelierProductId>("riviera-coffee");
 
+const selectedProduct = atelierProducts[selectedProductId];
   const [status, setStatus] = useState<LoadStatus>("loading");
   const [selectedPart, setSelectedPart] = useState<AlettePartId>("top");
   const [partMaterials, setPartMaterials] = useState<PartMaterials>(initialMaterials);
